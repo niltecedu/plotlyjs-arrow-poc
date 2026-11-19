@@ -316,3 +316,14 @@ differences there as noise.
 | [patches/dash-arrow.patch](patches/dash-arrow.patch) | the Dash change |
 | [patches/optimisations/](patches/optimisations/) | the plotly.js date change, and a script applying it to the bundle |
 | [results/](results/), [charts/](charts/) | raw results and generated charts |
+
+## How this repo was made
+
+The code, tests and write-up in this repository were generated with AI
+models: GPT 6.1 Sol and Claude Opus 5.5. The git history has been rewritten
+for cleanliness.
+
+## License
+
+[MIT](LICENSE). The patches modify [Dash](https://github.com/plotly/dash) and
+[plotly.js](https://github.com/plotly/plotly.js), which are also MIT licensed.
