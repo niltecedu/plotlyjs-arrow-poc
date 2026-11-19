@@ -1405,3 +1405,40 @@ Dash end to end, like bench.py: request sent to plot painted, no compression, fo
 </details>
 
 *Side finding, optional and out of scope for the transport work:* an app change, no Dash or plotly.js change. Dropping the zone draws the same chart and helps every transport. The main benchmarks keep the tz-aware index. The end-to-end forecast benchmark (section 3) uses a UTC index, which plotly.py converts faster than a London one, so its Dash *Build* and JSON *Encode* times understate this cost.
+
+### Compression: the benchmark's gzip, framework defaults, and zstd
+
+Server only: the time to compress one response body, and its size. The benchmarks above compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's `GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox (`Content-Encoding: zstd`). Values are full-precision random floats, which compress less than typical real data.
+
+- **Command:** `python microbench/optimisations.py --only compression --repeats 3`
+- **Finished:** 2026-11-19T11:18:00+00:00 (median of 3)
+
+| Case | gzip level 1, as benchmarked (`gzip.compress`) | Flask-Compress default (gzip level 6) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | zstd level 1 | zstd level 3 (zstd's default) |
+| --- | --- | --- | --- | --- | --- |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | 855 ms | 6,806 ms ▼ **-7.96x slower** | 22,792 ms ▼ **-26.67x slower** | 380 ms ▲ **+2.25x faster** | 759 ms ▲ **+1.13x faster** |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | 826 ms | 2,220 ms ▼ **-2.69x slower** | 7,584 ms ▼ **-9.18x slower** | 76 ms ▲ **+10.81x faster** | 133 ms ▲ **+6.23x faster** |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | 163 ms | 364 ms ▼ **-2.24x slower** | 494 ms ▼ **-3.04x slower** | 27 ms ▲ **+6.07x faster** | 61 ms ▲ **+2.68x faster** |
+
+<details><summary>Sizes</summary>
+
+| Case | Variant | Total | Wire MB |
+| --- | --- | --- | --- |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **855** | 46.27 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | Flask-Compress default (gzip level 6) | **6,806** | 40.67 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **22,792** | 39.91 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | zstd level 1 | **380** | 37.98 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | zstd level 3 (zstd's default) | **759** | 41.75 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **826** | 35.50 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | Flask-Compress default (gzip level 6) | **2,220** | 35.19 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **7,584** | 35.18 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | zstd level 1 | **76** | 35.28 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | zstd level 3 (zstd's default) | **133** | 35.04 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **163** | 8.56 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | Flask-Compress default (gzip level 6) | **364** | 8.40 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **494** | 8.39 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | zstd level 1 | **27** | 5.94 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | zstd level 3 (zstd's default) | **61** | 5.89 |
+
+</details>
+
+The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the same zlib. Their default levels are 2-27x slower for a payload at most 14% smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. *Not part of the benchmarks above, which use gzip; measured here as a lead.*

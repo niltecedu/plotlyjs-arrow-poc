@@ -12,14 +12,20 @@ section 4 of benchmark.md. Running one experiment (--only) keeps the others' res
    Measured end to end like bench.py, Arrow with gzip1.
 3. Dash app code: a tz-aware Europe/London index versus the same wall-clock
    times without a zone (microbench/dash_tz_index.py). End to end, every transport.
+4. Compression: the benchmark's gzip against what Flask-Compress and Starlette's
+   GZipMiddleware do by default, and zstd. Server only: time to compress a response.
 """
 
 import argparse
+import gzip
+import io
 import json
 import sys
+from compression import zstd
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
+from time import perf_counter
 
 from playwright.sync_api import sync_playwright
 
@@ -242,7 +248,73 @@ def tz_index_experiment(browser, shapes, repeats):
     }
 
 
-EXPERIMENTS = ("date-axis", "shared-x", "tz-index")
+def gzip_file(body, level, chunk=None):
+    """gzip as Flask-Compress (whole body) and Starlette's GZipMiddleware (in chunks) write it."""
+    buffer = io.BytesIO()
+    with gzip.GzipFile(mode="wb", compresslevel=level, fileobj=buffer, mtime=0) as out:
+        for start in range(0, len(body), chunk or len(body)):
+            out.write(body[start:start + (chunk or len(body))])
+    return buffer.getvalue()
+
+
+COMPRESSORS = {
+    "gzip1": ("gzip level 1, as benchmarked (`gzip.compress`)", lambda body: gzip.compress(body, 1, mtime=0)),
+    "flask-compress": ("Flask-Compress default (gzip level 6)", lambda body: gzip_file(body, 6)),
+    "starlette": ("Starlette GZipMiddleware default (gzip level 9, 64 kB chunks)",
+                  lambda body: gzip_file(body, 9, 65536)),
+    "zstd1": ("zstd level 1", lambda body: zstd.compress(body, 1)),
+    "zstd3": ("zstd level 3 (zstd's default)", lambda body: zstd.compress(body, 3)),
+}
+
+
+def compression_experiment(repeats):
+    import dash_app  # noqa: PLC0415  only this experiment needs the Dash figure
+
+    frame = make_frame(10_000_000, 10)
+    payloads = {
+        "FastAPI, orjson, scale 10M points x 10 traces": encode_columns(frame, "orjson")[0],
+        "FastAPI, arrow, scale 10M points x 10 traces": encode_columns(frame, "arrow")[0],
+    }
+    del frame
+    figure = dash_app.figure(1_440 * 500, 500, "forecast")
+    payloads["Dash, orjson, forecast 1,440 rows x 500 sites"] = dash_app.stock_to_json(
+        {"multi": True, "response": {"graph": {"figure": figure}}}).encode()
+
+    rows = []
+    for case, body in payloads.items():
+        modes = {}
+        for key, (_label, compress) in COMPRESSORS.items():
+            times = []
+            for _ in range(repeats):
+                start = perf_counter()
+                out = compress(body)
+                times.append((perf_counter() - start) * 1000)
+            modes[key] = {"total_ms": median(times), "wire_bytes": len(out)}
+        rows.append({"case": f"{case} ({len(body) / 1e6:.1f} MB)", "modes": modes})
+        print(json.dumps(rows[-1]), flush=True)
+    return {
+        "title": "Compression: the benchmark's gzip, framework defaults, and zstd",
+        "description": (
+            "Server only: the time to compress one response body, and its size. The benchmarks above "
+            "compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses "
+            "only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's "
+            "`GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the "
+            "Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox "
+            "(`Content-Encoding: zstd`). Values are full-precision random floats, which compress less "
+            "than typical real data."),
+        "notes": (
+            "The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the "
+            "same zlib. Their default levels are 2-27x slower for a payload at most 14% smaller. zstd "
+            "level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. "
+            "*Not part of the benchmarks above, which use gzip; measured here as a lead.*"),
+        "baseline": "gzip1",
+        "columns": {key: label for key, (label, _fn) in COMPRESSORS.items()},
+        "detail": {},
+        "rows": rows,
+    }
+
+
+EXPERIMENTS = ("date-axis", "shared-x", "tz-index", "compression")
 
 
 def main():
@@ -263,14 +335,18 @@ def main():
     selected = [args.only] if args.only else list(EXPERIMENTS)
 
     experiments = {}
-    with sync_playwright() as playwright:
-        browser, renderer = bench.launch(playwright, args.headless)
-        runners = {"date-axis": lambda: date_axis_experiment(browser, date_shapes, args.repeats),
-                   "shared-x": lambda: shared_x_experiment(browser, shared_shapes, args.repeats),
-                   "tz-index": lambda: tz_index_experiment(browser, tz_shapes, args.repeats)}
-        for key in selected:
-            experiments[key] = {"id": key, "webgl_renderer": renderer, **runners[key]()}
-        browser.close()
+    if "compression" in selected:
+        experiments["compression"] = {"id": "compression", **compression_experiment(args.repeats)}
+    browser_runs = [key for key in selected if key != "compression"]
+    if browser_runs:
+        with sync_playwright() as playwright:
+            browser, renderer = bench.launch(playwright, args.headless)
+            runners = {"date-axis": lambda: date_axis_experiment(browser, date_shapes, args.repeats),
+                       "shared-x": lambda: shared_x_experiment(browser, shared_shapes, args.repeats),
+                       "tz-index": lambda: tz_index_experiment(browser, tz_shapes, args.repeats)}
+            for key in browser_runs:
+                experiments[key] = {"id": key, "webgl_renderer": renderer, **runners[key]()}
+            browser.close()
 
     run = {"command": "python " + " ".join(["microbench/optimisations.py", *sys.argv[1:]]),
            "finished": datetime.now(timezone.utc).isoformat(timespec="seconds"), "repeats": args.repeats}

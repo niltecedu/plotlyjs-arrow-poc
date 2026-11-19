@@ -518,6 +518,101 @@
    "command": "python microbench/optimisations.py --only tz-index --repeats 3",
    "finished": "2026-11-19T01:55:01+00:00",
    "repeats": 3
+  },
+  {
+   "id": "compression",
+   "title": "Compression: the benchmark's gzip, framework defaults, and zstd",
+   "description": "Server only: the time to compress one response body, and its size. The benchmarks above compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's `GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox (`Content-Encoding: zstd`). Values are full-precision random floats, which compress less than typical real data.",
+   "notes": "The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the same zlib. Their default levels are 2-27x slower for a payload at most 14% smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. *Not part of the benchmarks above, which use gzip; measured here as a lead.*",
+   "baseline": "gzip1",
+   "columns": {
+    "gzip1": "gzip level 1, as benchmarked (`gzip.compress`)",
+    "flask-compress": "Flask-Compress default (gzip level 6)",
+    "starlette": "Starlette GZipMiddleware default (gzip level 9, 64 kB chunks)",
+    "zstd1": "zstd level 1",
+    "zstd3": "zstd level 3 (zstd's default)"
+   },
+   "detail": {},
+   "rows": [
+    {
+     "case": "FastAPI, orjson, scale 10M points x 10 traces (117.6 MB)",
+     "modes": {
+      "gzip1": {
+       "total_ms": 854.6392210046179,
+       "wire_bytes": 46269419
+      },
+      "flask-compress": {
+       "total_ms": 6806.411871002638,
+       "wire_bytes": 40667838
+      },
+      "starlette": {
+       "total_ms": 22791.92315399996,
+       "wire_bytes": 39907957
+      },
+      "zstd1": {
+       "total_ms": 380.0265199970454,
+       "wire_bytes": 37982914
+      },
+      "zstd3": {
+       "total_ms": 759.0935490006814,
+       "wire_bytes": 41752187
+      }
+     }
+    },
+    {
+     "case": "FastAPI, arrow, scale 10M points x 10 traces (48.0 MB)",
+     "modes": {
+      "gzip1": {
+       "total_ms": 826.2766449988703,
+       "wire_bytes": 35504444
+      },
+      "flask-compress": {
+       "total_ms": 2219.5059079967905,
+       "wire_bytes": 35186188
+      },
+      "starlette": {
+       "total_ms": 7583.890986999904,
+       "wire_bytes": 35181499
+      },
+      "zstd1": {
+       "total_ms": 76.41919700108701,
+       "wire_bytes": 35280477
+      },
+      "zstd3": {
+       "total_ms": 132.63406600162853,
+       "wire_bytes": 35042358
+      }
+     }
+    },
+    {
+     "case": "Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB)",
+     "modes": {
+      "gzip1": {
+       "total_ms": 162.65607099921908,
+       "wire_bytes": 8563989
+      },
+      "flask-compress": {
+       "total_ms": 364.4829879995086,
+       "wire_bytes": 8399732
+      },
+      "starlette": {
+       "total_ms": 493.6620540029253,
+       "wire_bytes": 8394400
+      },
+      "zstd1": {
+       "total_ms": 26.815052995516453,
+       "wire_bytes": 5937599
+      },
+      "zstd3": {
+       "total_ms": 60.76816599670565,
+       "wire_bytes": 5894687
+      }
+     }
+    }
+   ],
+   "command": "python microbench/optimisations.py --only compression --repeats 3",
+   "finished": "2026-11-19T11:18:00+00:00",
+   "repeats": 3
   }
  ]
 }

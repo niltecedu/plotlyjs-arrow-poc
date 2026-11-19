@@ -75,6 +75,8 @@ How it is measured:
   is encoded from scratch with `Cache-Control: no-store`. WebGL runs on the
   GPU.
 - Each transport is tried with no compression, gzip level 1 and gzip level 6.
+  Neither Dash nor FastAPI compresses responses by default, so the apps do it
+  themselves, with the same code in both.
 - The baseline (**1x**) is orjson without compression, for the same app and
   data. `+2.0x` means twice as fast, `-2.0x` twice as slow.
 - Every transport must draw the same thing: the runner compares trace count,
@@ -114,11 +116,16 @@ benchmark.md: [scale](benchmark.md#2-full-benchmark-scale-no-compression-gzip-1-
    (0.88-1.03x). The PR covers Dash's JSON encoding in general (layouts,
    components, other props), which this POC does not measure. In FastAPI,
    msgspec has no numpy support, so its JSON is larger and no faster.
-5. **gzip only adds time here** (mostly 0.6-1.0x), as there is no real
-   network. On a slow link it saves transfer time: at 10M points x 1 trace
-   the payload is 323 MB of JSON, 73 MB gzipped, 120 MB of Arrow, or 69 MB
-   gzipped. Level 6 makes the payload only 4-12% smaller than level 1 but
-   takes 2-8x longer ([benchmark.md section 2](benchmark.md#2-full-benchmark-scale-no-compression-gzip-1-gzip-6)).
+5. **gzip shows only its cost here** (mostly 0.6-1.0x): over loopback,
+   about 15 Gbit/s, a smaller payload saves almost no download time, so what
+   is left is the time to compress, about 0.1 s for a 29 MB response and
+   0.8-1.5 s at 10M points. On a real network it pays off. Dividing the bytes
+   gzip level 1 saves by the time it takes gives the link speed below which
+   it wins: about **0.5-1.7 Gbit/s for JSON**, and 25-500 Mbit/s for Arrow,
+   which compresses less. Level 6 makes the payload only 4-12% smaller than
+   level 1 but takes 2-8x longer ([benchmark.md section 2](benchmark.md#2-full-benchmark-scale-no-compression-gzip-1-gzip-6)). At 10M
+   points x 1 trace the payload is 323 MB of JSON, 73 MB gzipped, 120 MB of
+   Arrow, or 69 MB gzipped.
 6. **Dash takes longer than FastAPI** for the same data and transport: 1.1-1.6x
    on large charts, 2-5x on forecast charts (flagged in benchmark.md for
    [scale](benchmark.md#dash-vs-fastapi-1) and
@@ -187,7 +194,15 @@ with FastAPI and 1.7x to 4.5x faster with Dash.
    local time. Fast ISO strings ([web/dates.js](web/dates.js)) keep the data's
    own times instead. The Dash patch uses fast ISO strings, so existing Dash
    charts keep showing the times plotly.py sends.
-4. **Compression:** gzip level 1, and only where the network is slow.
+4. **Compression: gzip level 1 on any real network, or zstd.** For JSON,
+   gzip level 1 pays off on links slower than about 0.5-1.7 Gbit/s, so skip
+   it only on localhost or a very fast LAN. If you turn on the frameworks'
+   own compression, set the level to 1 (`COMPRESS_LEVEL = 1` for
+   Flask-Compress, `GZipMiddleware(compresslevel=1)` for Starlette): their
+   defaults, 6 and 9, are 2-27x slower for a payload at most 14% smaller.
+   zstd level 1, which current browsers accept, is 2-11x faster than gzip
+   level 1 and its payload 1-31% smaller
+   ([benchmark.md section 4](benchmark.md#compression-the-benchmarks-gzip-framework-defaults-and-zstd)). The benchmarks above use gzip.
 
 Tried and not adopted:
 
@@ -303,8 +318,10 @@ app, so an interrupted run keeps what it measured.
 
 **Limits.** One machine over loopback, so there is no network time; a real
 link adds transfer time, which favours the smaller payloads (Arrow, gzip).
-Cases under about 0.5 s vary by 10-20% between samples, so treat small
-differences there as noise.
+The values are full-precision random floats, which compress less than typical
+real data: with 1-2 decimals, gzipped JSON comes out about the size of
+gzipped Arrow. Cases under about 0.5 s vary by 10-20% between samples, so
+treat small differences there as noise.
 
 ## Files
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("svg")
+matplotlib.rcParams["svg.hashsalt"] = "plotlyjs-arrow-poc"  # stable element ids, so unchanged charts stay unchanged
 import matplotlib.pyplot as plt  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
@@ -403,7 +404,8 @@ def micro_section(micro):
                 out.append("| " + " | ".join(cells) + " |")
             if "detail" in item:  # where the time goes, per mode
                 header = ["Case", "Variant", *item["detail"].values(), "Total", "Wire MB"]
-                out += ["", "<details><summary>Where the time goes</summary>", "",
+                summary = "Where the time goes" if item["detail"] else "Sizes"
+                out += ["", f"<details><summary>{summary}</summary>", "",
                         "| " + " | ".join(header) + " |", separator(len(header))]
                 for row in item["rows"]:
                     for mode, label in item["columns"].items():
