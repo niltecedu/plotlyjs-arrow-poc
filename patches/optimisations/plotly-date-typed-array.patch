@@ -1,0 +1,17 @@
+diff --git a/src/plots/cartesian/set_convert.js b/src/plots/cartesian/set_convert.js
+index b4ea95f..8a8690c 100644
+--- a/src/plots/cartesian/set_convert.js
++++ b/src/plots/cartesian/set_convert.js
+@@ -892,7 +892,11 @@ module.exports = function setConvert(ax, fullLayout) {
+             arrayIn = trace[axLetter];
+             len = trace._length || Lib.minRowLength(arrayIn);
+ 
+-            if(Lib.isTypedArray(arrayIn) && (axType === 'linear' || axType === 'log')) {
++            // A Float64Array on a date axis is taken as UTC milliseconds: the
++            // values date strings convert to, so it is used as is.
++            var usableAsIs = axType === 'linear' || axType === 'log' ||
++                (axType === 'date' && arrayIn instanceof Float64Array);
++            if(Lib.isTypedArray(arrayIn) && usableAsIs) {
+                 if(len === arrayIn.length) {
+                     return arrayIn;
+                 } else if(arrayIn.subarray) {

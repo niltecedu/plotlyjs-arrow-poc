@@ -1,0 +1,523 @@
+{
+ "experiments": [
+  {
+   "title": "Timestamps: four ways to hand Arrow dates to plotly.js",
+   "description": "Browser only (no server, no network): decode the payload, build traces, `Plotly.react`, paint. Same Arrow payload for every Arrow mode; the conversions are in [web/dates.js](web/dates.js). *toISOString*: one Date and string per value. *Fast ISO strings*: the same strings with the date part made once per day and the time part once per second of the day. *Date objects*: what I use today when passing Arrow data to plotly.js by hand. *UTC ms, patched plotly.js*: a Float64Array that plotly.js takes as is after the one-condition change in [patches/optimisations/plotly-date-typed-array.patch](patches/optimisations/plotly-date-typed-array.patch). The last two columns drop the timestamp column (row index on a linear axis) to show what dates cost. The browser runs in UTC so all modes with dates draw the same axis ranges, which is checked.",
+   "notes": "Date objects are shown in the browser's local time, ISO strings and patched UTC ms as written; only the first suits a chart that must follow the viewer's timezone. Patched plotly.js reads numbers on a date axis differently from today (local-time ms), so upstream it would need to be opt-in.\n\n*Tried, not adopted:* making the UTC ms on the server (casting the timestamp column to float64) saved only a few percent over converting in the browser. It also moves an O(n) cast to the server, and the payload no longer carries the Arrow timestamp type.",
+   "baseline": "json",
+   "columns": {
+    "json": "orjson JSON, stock plotly.js (baseline)",
+    "iso": "Arrow, toISOString, stock plotly.js",
+    "fast-iso": "Arrow, fast ISO strings, stock plotly.js",
+    "date": "Arrow, Date objects, stock plotly.js",
+    "ms": "Arrow, UTC ms, patched plotly.js",
+    "json-no-dates": "No timestamps: orjson JSON",
+    "arrow-no-dates": "No timestamps: Arrow"
+   },
+   "rows": [
+    {
+     "case": "Forecast (stacked SVG, float64, nulls): 1,440 rows x 50 traces",
+     "modes": {
+      "json": {
+       "total_ms": 211.19999999925494,
+       "decode_ms": 3,
+       "plot_ms": 202.5
+      },
+      "iso": {
+       "total_ms": 216,
+       "decode_ms": 8.800000000745058,
+       "plot_ms": 199.80000000074506
+      },
+      "fast-iso": {
+       "total_ms": 216.90000000223517,
+       "decode_ms": 8.100000001490116,
+       "plot_ms": 202
+      },
+      "date": {
+       "total_ms": 189.39999999850988,
+       "decode_ms": 6.900000002235174,
+       "plot_ms": 176.5
+      },
+      "ms": {
+       "total_ms": 189.10000000149012,
+       "decode_ms": 7.199999999254942,
+       "plot_ms": 175.40000000223517
+      },
+      "json-no-dates": {
+       "total_ms": 192.5,
+       "decode_ms": 3,
+       "plot_ms": 172.69999999925494
+      },
+      "arrow-no-dates": {
+       "total_ms": 182,
+       "decode_ms": 7.100000001490116,
+       "plot_ms": 169.10000000149012
+      }
+     }
+    },
+    {
+     "case": "Forecast (stacked SVG, float64, nulls): 1,440 rows x 500 traces",
+     "modes": {
+      "json": {
+       "total_ms": 1226.1000000014901,
+       "decode_ms": 33.399999998509884,
+       "plot_ms": 1157.5999999977648
+      },
+      "iso": {
+       "total_ms": 1197,
+       "decode_ms": 25.600000001490116,
+       "plot_ms": 1133.8999999985099
+      },
+      "fast-iso": {
+       "total_ms": 1198.699999999255,
+       "decode_ms": 26,
+       "plot_ms": 1135.3999999985099
+      },
+      "date": {
+       "total_ms": 1004.8999999985099,
+       "decode_ms": 25.5,
+       "plot_ms": 940.5999999977648
+      },
+      "ms": {
+       "total_ms": 933.7000000029802,
+       "decode_ms": 25.600000001490116,
+       "plot_ms": 872.7000000029802
+      },
+      "json-no-dates": {
+       "total_ms": 925.2999999970198,
+       "decode_ms": 34.19999999925494,
+       "plot_ms": 856.4000000022352
+      },
+      "arrow-no-dates": {
+       "total_ms": 909.6000000014901,
+       "decode_ms": 28.199999999254942,
+       "plot_ms": 848.5
+      }
+     }
+    },
+    {
+     "case": "Scale (scattergl, float32): 1,000,000 rows x 1 trace",
+     "modes": {
+      "json": {
+       "total_ms": 1000.5,
+       "decode_ms": 86.19999999925494,
+       "plot_ms": 910.7000000029802
+      },
+      "iso": {
+       "total_ms": 1257.2000000029802,
+       "decode_ms": 398.20000000298023,
+       "plot_ms": 855.6999999992549
+      },
+      "fast-iso": {
+       "total_ms": 1048.300000000745,
+       "decode_ms": 77.90000000223517,
+       "plot_ms": 967.5999999977648
+      },
+      "date": {
+       "total_ms": 725.3999999985099,
+       "decode_ms": 115.10000000149012,
+       "plot_ms": 610.5999999977648
+      },
+      "ms": {
+       "total_ms": 547.6000000014901,
+       "decode_ms": 27.199999999254942,
+       "plot_ms": 516.1999999992549
+      },
+      "json-no-dates": {
+       "total_ms": 555.1000000014901,
+       "decode_ms": 27.800000000745058,
+       "plot_ms": 524.1999999992549
+      },
+      "arrow-no-dates": {
+       "total_ms": 552.8000000007451,
+       "decode_ms": 5,
+       "plot_ms": 545.4000000022352
+      }
+     }
+    },
+    {
+     "case": "Scale (scattergl, float32): 100,000 rows x 10 traces",
+     "modes": {
+      "json": {
+       "total_ms": 874.5,
+       "decode_ms": 31.399999998509884,
+       "plot_ms": 841.3000000007451
+      },
+      "iso": {
+       "total_ms": 870.4000000022352,
+       "decode_ms": 43.599999997764826,
+       "plot_ms": 822.2999999970198
+      },
+      "fast-iso": {
+       "total_ms": 858.5,
+       "decode_ms": 13.099999997764826,
+       "plot_ms": 844
+      },
+      "date": {
+       "total_ms": 587.6999999992549,
+       "decode_ms": 14,
+       "plot_ms": 571.8000000007451
+      },
+      "ms": {
+       "total_ms": 511.8999999985099,
+       "decode_ms": 7.699999999254942,
+       "plot_ms": 500.8999999985099
+      },
+      "json-no-dates": {
+       "total_ms": 505.1000000014901,
+       "decode_ms": 22.800000000745058,
+       "plot_ms": 479.0999999977648
+      },
+      "arrow-no-dates": {
+       "total_ms": 500.4000000022352,
+       "decode_ms": 3.2999999970197678,
+       "plot_ms": 490.5999999977648
+      }
+     }
+    }
+   ],
+   "id": "date-axis",
+   "webgl_renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA RTX 500 Ada Generation Laptop GPU), OpenGL 4.6)",
+   "command": "python microbench/optimisations.py --repeats 3",
+   "finished": "2026-11-18T22:38:13+00:00",
+   "repeats": 3
+  },
+  {
+   "title": "Dash: send an array repeated across traces once",
+   "description": "Dash with Arrow and gzip1, end to end, forecast workload (go.Figure + go.Scatter, as a typical Dash app builds charts). go.Figure copies x into every trace. *Without*: the patch as benchmarked, one Arrow column per trace, each converted to dates in the browser. *With*: [microbench/dash_shared_x.py](microbench/dash_shared_x.py) reuses the column of an earlier array with identical contents, so x goes once.",
+   "notes": "*Not adopted.* It makes the payload about 15% smaller, but the total barely moves: forecast charts have few rows per trace, so the repeated timestamps are a small part of the work next to building the go.Figure and drawing stacked SVG. FastAPI already sends x once.",
+   "rows": [
+    {
+     "case": "Forecast: 336 rows x 50 traces (wire 141 kB -> 133 kB)",
+     "without_ms": 231.70000000298023,
+     "with_ms": 224.80000000074506
+    },
+    {
+     "case": "Forecast: 1,440 rows x 50 traces (wire 639 kB -> 554 kB)",
+     "without_ms": 562.5,
+     "with_ms": 508
+    },
+    {
+     "case": "Forecast: 1,440 rows x 200 traces (wire 2.5 MB -> 2.2 MB)",
+     "without_ms": 1886,
+     "with_ms": 1868.4000000022352
+    },
+    {
+     "case": "Forecast: 1,440 rows x 500 traces (wire 6.4 MB -> 5.5 MB)",
+     "without_ms": 4495.89999999851,
+     "with_ms": 4545.199999999255
+    }
+   ],
+   "id": "shared-x",
+   "webgl_renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA RTX 500 Ada Generation Laptop GPU), OpenGL 4.6)",
+   "command": "python microbench/optimisations.py --repeats 3",
+   "finished": "2026-11-18T22:38:13+00:00",
+   "repeats": 3
+  },
+  {
+   "id": "tz-index",
+   "webgl_renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA RTX 500 Ada Generation Laptop GPU), OpenGL 4.6)",
+   "title": "Dash app code: drop the timezone from the index before plotting",
+   "description": "Dash end to end, like bench.py: request sent to plot painted, no compression, forecast workload (half-hourly float64 with nulls, stacked SVG `scatter`). The DataFrame index is in Europe/London (from `tz_convert`), either **tz-aware** or with the zone dropped (`df.index.tz_convert(\"Europe/London\").tz_localize(None)`), served by [microbench/dash_tz_index.py](microbench/dash_tz_index.py). plotly.py stores a tz-aware index as an object array of `pd.Timestamp` in every trace, and every encoder then walks it in Python. Both draw the same chart (plotly.js shows a date string's wall-clock time and ignores its offset), which is checked. Baseline: tz-aware index with stock Dash (orjson). *arrow-ms* uses the patched plotly.js.",
+   "notes": "*Side finding, optional and out of scope for the transport work:* an app change, no Dash or plotly.js change. Dropping the zone draws the same chart and helps every transport. The main benchmarks keep the tz-aware index. The end-to-end forecast benchmark (section 3) uses a UTC index, which plotly.py converts faster than a London one, so its Dash *Build* and JSON *Encode* times understate this cost.",
+   "baseline": "tz-orjson",
+   "columns": {
+    "tz-orjson": "tz-aware index, orjson",
+    "tz-msgspec": "tz-aware index, msgspec",
+    "tz-arrow": "tz-aware index, arrow",
+    "tz-arrow-ms": "tz-aware index, arrow-ms",
+    "naive-orjson": "zone dropped, orjson",
+    "naive-msgspec": "zone dropped, msgspec",
+    "naive-arrow": "zone dropped, arrow",
+    "naive-arrow-ms": "zone dropped, arrow-ms"
+   },
+   "detail": {
+    "build_ms": "Build",
+    "encode_ms": "Encode",
+    "wait_ms": "Wait",
+    "browser_ms": "Browser"
+   },
+   "rows": [
+    {
+     "case": "336 rows x 50 traces",
+     "modes": {
+      "tz-orjson": {
+       "total_ms": 436.29999999701977,
+       "build_ms": 153.577,
+       "encode_ms": 139.652,
+       "wait_ms": 295.5,
+       "browser_ms": 142.39999999850988,
+       "wire_bytes": 688009
+      },
+      "tz-msgspec": {
+       "total_ms": 498.19999999925494,
+       "build_ms": 145.853,
+       "encode_ms": 182.069,
+       "wait_ms": 336.5,
+       "browser_ms": 148.09999999776483,
+       "wire_bytes": 688009
+      },
+      "tz-arrow": {
+       "total_ms": 340.69999999925494,
+       "build_ms": 150.173,
+       "encode_ms": 44.237,
+       "wait_ms": 196.39999999850988,
+       "browser_ms": 146.89999999850988,
+       "wire_bytes": 301752
+      },
+      "tz-arrow-ms": {
+       "total_ms": 338.69999999925494,
+       "build_ms": 157.012,
+       "encode_ms": 43.157,
+       "wait_ms": 204.39999999850988,
+       "browser_ms": 135.69999999925494,
+       "wire_bytes": 301752
+      },
+      "naive-orjson": {
+       "total_ms": 168,
+       "build_ms": 12.891,
+       "encode_ms": 6.972,
+       "wait_ms": 21.699999999254942,
+       "browser_ms": 144.39999999850988,
+       "wire_bytes": 654409
+      },
+      "naive-msgspec": {
+       "total_ms": 162.39999999850988,
+       "build_ms": 12.672,
+       "encode_ms": 6.67,
+       "wait_ms": 21.099999997764826,
+       "browser_ms": 140.19999999925494,
+       "wire_bytes": 654409
+      },
+      "naive-arrow": {
+       "total_ms": 163.59999999776483,
+       "build_ms": 12.632,
+       "encode_ms": 1.795,
+       "wait_ms": 17.199999999254942,
+       "browser_ms": 145.79999999701977,
+       "wire_bytes": 301752
+      },
+      "naive-arrow-ms": {
+       "total_ms": 153.10000000149012,
+       "build_ms": 12.72,
+       "encode_ms": 1.67,
+       "wait_ms": 16.300000000745058,
+       "browser_ms": 136.80000000074506,
+       "wire_bytes": 301752
+      }
+     }
+    },
+    {
+     "case": "1,440 rows x 50 traces",
+     "modes": {
+      "tz-orjson": {
+       "total_ms": 1504.0999999977648,
+       "build_ms": 606.876,
+       "encode_ms": 588.399,
+       "wait_ms": 1197.699999999255,
+       "browser_ms": 315.30000000074506,
+       "wire_bytes": 2907064
+      },
+      "tz-msgspec": {
+       "total_ms": 1547.300000000745,
+       "build_ms": 547.724,
+       "encode_ms": 681.863,
+       "wait_ms": 1238,
+       "browser_ms": 308.9000000022352,
+       "wire_bytes": 2907064
+      },
+      "tz-arrow": {
+       "total_ms": 1079,
+       "build_ms": 599.769,
+       "encode_ms": 167.049,
+       "wait_ms": 768.5999999977648,
+       "browser_ms": 308.80000000074506,
+       "wire_bytes": 1184952
+      },
+      "tz-arrow-ms": {
+       "total_ms": 1020.8000000007451,
+       "build_ms": 615.054,
+       "encode_ms": 147.579,
+       "wait_ms": 765,
+       "browser_ms": 258.79999999701977,
+       "wire_bytes": 1184952
+      },
+      "naive-orjson": {
+       "total_ms": 369.8999999985099,
+       "build_ms": 15.335,
+       "encode_ms": 18.21,
+       "wait_ms": 35.899999998509884,
+       "browser_ms": 331.3999999985099,
+       "wire_bytes": 2763064
+      },
+      "naive-msgspec": {
+       "total_ms": 364.69999999925494,
+       "build_ms": 13.626,
+       "encode_ms": 17.785,
+       "wait_ms": 33.600000001490116,
+       "browser_ms": 328.4000000022352,
+       "wire_bytes": 2763064
+      },
+      "naive-arrow": {
+       "total_ms": 336.20000000298023,
+       "build_ms": 14.928,
+       "encode_ms": 3.577,
+       "wait_ms": 20.300000000745058,
+       "browser_ms": 314.20000000298023,
+       "wire_bytes": 1184952
+      },
+      "naive-arrow-ms": {
+       "total_ms": 276,
+       "build_ms": 13.72,
+       "encode_ms": 3.221,
+       "wait_ms": 19.300000000745058,
+       "browser_ms": 254.69999999925494,
+       "wire_bytes": 1184952
+      }
+     }
+    },
+    {
+     "case": "1,440 rows x 200 traces",
+     "modes": {
+      "tz-orjson": {
+       "total_ms": 5702.300000000745,
+       "build_ms": 2296.908,
+       "encode_ms": 2432.053,
+       "wait_ms": 4750.699999999255,
+       "browser_ms": 946.6999999992549,
+       "wire_bytes": 11607539
+      },
+      "tz-msgspec": {
+       "total_ms": 5881,
+       "build_ms": 2288.188,
+       "encode_ms": 2605.721,
+       "wait_ms": 4912.89999999851,
+       "browser_ms": 949.5,
+       "wire_bytes": 11607539
+      },
+      "tz-arrow": {
+       "total_ms": 3850,
+       "build_ms": 2273.484,
+       "encode_ms": 592.123,
+       "wait_ms": 2867.89999999851,
+       "browser_ms": 965.6999999992549,
+       "wire_bytes": 4719408
+      },
+      "tz-arrow-ms": {
+       "total_ms": 3671.400000002235,
+       "build_ms": 2278.227,
+       "encode_ms": 585.798,
+       "wait_ms": 2866.300000000745,
+       "browser_ms": 804.3000000007451,
+       "wire_bytes": 4719408
+      },
+      "naive-orjson": {
+       "total_ms": 1117,
+       "build_ms": 50.943,
+       "encode_ms": 84.158,
+       "wait_ms": 140,
+       "browser_ms": 959.3000000007451,
+       "wire_bytes": 11031539
+      },
+      "naive-msgspec": {
+       "total_ms": 1095.3999999985099,
+       "build_ms": 50.013,
+       "encode_ms": 78.192,
+       "wait_ms": 131.69999999925494,
+       "browser_ms": 951.6999999992549,
+       "wire_bytes": 11031539
+      },
+      "naive-arrow": {
+       "total_ms": 1073.5,
+       "build_ms": 54.958,
+       "encode_ms": 11.234,
+       "wait_ms": 68.39999999850988,
+       "browser_ms": 1001.6000000014901,
+       "wire_bytes": 4719408
+      },
+      "naive-arrow-ms": {
+       "total_ms": 848.3000000007451,
+       "build_ms": 51.899,
+       "encode_ms": 9.533,
+       "wait_ms": 63.70000000298023,
+       "browser_ms": 776.9000000022352,
+       "wire_bytes": 4719408
+      }
+     }
+    },
+    {
+     "case": "1,440 rows x 500 traces",
+     "modes": {
+      "tz-orjson": {
+       "total_ms": 14243.10000000149,
+       "build_ms": 5788.351,
+       "encode_ms": 6300.815,
+       "wait_ms": 12099,
+       "browser_ms": 2098.400000002235,
+       "wire_bytes": 29002909
+      },
+      "tz-msgspec": {
+       "total_ms": 14716.099999997765,
+       "build_ms": 5772.681,
+       "encode_ms": 6658.382,
+       "wait_ms": 12503.39999999851,
+       "browser_ms": 2079.39999999851,
+       "wire_bytes": 29002909
+      },
+      "tz-arrow": {
+       "total_ms": 9374,
+       "build_ms": 5689.869,
+       "encode_ms": 1462.048,
+       "wait_ms": 7183.20000000298,
+       "browser_ms": 2180.89999999851,
+       "wire_bytes": 11788304
+      },
+      "tz-arrow-ms": {
+       "total_ms": 8893.800000000745,
+       "build_ms": 5713.2,
+       "encode_ms": 1467.606,
+       "wait_ms": 7255.10000000149,
+       "browser_ms": 1664.6000000014901,
+       "wire_bytes": 11788304
+      },
+      "naive-orjson": {
+       "total_ms": 2484.39999999851,
+       "build_ms": 128.82,
+       "encode_ms": 206.553,
+       "wait_ms": 341.19999999925494,
+       "browser_ms": 2104.300000000745,
+       "wire_bytes": 27562909
+      },
+      "naive-msgspec": {
+       "total_ms": 2452.10000000149,
+       "build_ms": 135.97,
+       "encode_ms": 200.175,
+       "wait_ms": 349,
+       "browser_ms": 2090,
+       "wire_bytes": 27562909
+      },
+      "naive-arrow": {
+       "total_ms": 2346.400000002235,
+       "build_ms": 132.598,
+       "encode_ms": 19.58,
+       "wait_ms": 163.5,
+       "browser_ms": 2173.10000000149,
+       "wire_bytes": 11788304
+      },
+      "naive-arrow-ms": {
+       "total_ms": 1877.6000000014901,
+       "build_ms": 126.873,
+       "encode_ms": 23.234,
+       "wait_ms": 149.60000000149012,
+       "browser_ms": 1719.800000000745,
+       "wire_bytes": 11788304
+      }
+     }
+    }
+   ],
+   "command": "python microbench/optimisations.py --only tz-index --repeats 3",
+   "finished": "2026-11-19T01:55:01+00:00",
+   "repeats": 3
+  }
+ ]
+}

@@ -1,0 +1,8 @@
+.venv/
+.upstream/
+.build/
+node_modules/
+__pycache__/
+.pytest_cache/
+results/scratch/
+.vscode/

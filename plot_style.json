@@ -1,0 +1,13 @@
+{
+  "traces": {
+    "scale": {"type": "scattergl", "mode": "lines", "line": {"width": 1}},
+    "forecast": {"type": "scatter", "mode": "lines", "line": {"width": 0.5}, "stackgroup": "sites"}
+  },
+  "layout": {
+    "height": 460,
+    "margin": {"l": 50, "r": 20, "t": 20, "b": 40},
+    "xaxis": {"type": "date"},
+    "showlegend": false
+  },
+  "config": {"responsive": false, "displaylogo": false}
+}

@@ -1,0 +1,9 @@
+{
+  "name": "plotly-arrow-poc",
+  "private": true,
+  "dependencies": {
+    "apache-arrow": "21.2.0",
+    "esbuild": "0.28.2",
+    "plotly.js-dist-min": "4.3.0"
+  }
+}

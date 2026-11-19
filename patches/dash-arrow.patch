@@ -1,0 +1,355 @@
+diff --git a/dash/_arrow.py b/dash/_arrow.py
+new file mode 100644
+index 0000000..4ad046e
+--- /dev/null
++++ b/dash/_arrow.py
+@@ -0,0 +1,161 @@
++"""Send figure data in callback responses as an Arrow IPC stream.
++
++When the renderer accepts Arrow, every array in a returned ``figure`` that
++Arrow can carry is replaced by a placeholder ``{"__arrow__": i}``:
++
++* Arrow-backed arrays: Polars Series, pandas Series with a pyarrow dtype,
++  pyarrow Array / ChunkedArray (anything implementing the Arrow PyCapsule
++  interface);
++* numpy arrays, which is what ``go.Figure`` and ``px`` store after validating
++  their input, so existing figure code needs no change.
++
++The response is then one Arrow IPC stream:
++
++* column ``i`` holds array ``i`` as a single list value, so arrays of
++  different lengths share one record batch;
++* the rest of the response is JSON in the schema metadata under ``"dash"``.
++
++The renderer reads the stream, turns each column into a typed array (dates
++into what plotly.js reads) and puts it back where its placeholder was.
++Responses without such arrays, and clients that do not accept Arrow, get JSON
++exactly as before.
++"""
++
++import sys
++
++from ._utils import to_json
++
++ARROW_MIMETYPE = "application/vnd.apache.arrow.stream"
++PLACEHOLDER = "__arrow__"
++MAX_LIST_LENGTH = 2**31 - 1  # Arrow list offsets are int32
++
++
++def to_arrow_response(response, callback_ctx, request_headers):
++    """Return the response as Arrow IPC bytes, or None to send JSON."""
++    callback_ctx.dash_response.append_header("Vary", "Accept")
++    if ARROW_MIMETYPE not in request_headers.get("Accept", ""):
++        return None
++
++    arrays = []
++    envelope = {
++        **response,
++        "response": {
++            component: {
++                prop: _replace_arrays(value, arrays) if prop == "figure" else value
++                for prop, value in props.items()
++            }
++            for component, props in response.get("response", {}).items()
++        },
++    }
++    if not arrays:
++        return None
++
++    import pyarrow as pa  # pylint: disable=import-outside-toplevel
++
++    columns = [
++        pa.ListArray.from_arrays(pa.array([0, len(array)], pa.int32()), array)
++        for array in arrays
++    ]
++    batch = pa.RecordBatch.from_arrays(columns, names=[str(i) for i in range(len(columns))])
++    batch = batch.replace_schema_metadata({"dash": to_json(envelope)})
++    sink = pa.BufferOutputStream()
++    with pa.ipc.new_stream(sink, batch.schema) as writer:
++        writer.write_batch(batch)
++
++    callback_ctx.dash_response.set_header("Content-Type", ARROW_MIMETYPE)
++    return sink.getvalue().to_pybytes()
++
++
++def _replace_arrays(value, arrays):
++    """Copy ``value``, swapping arrays Arrow can carry for placeholders."""
++    if _is_plotly_figure(value):
++        # plotly.py keeps the validated numpy arrays here; to_plotly_json()
++        # would turn them into base64 and lists first.
++        if value.frames:
++            return value
++        value = {"data": value._data, "layout": value._layout}  # pylint: disable=protected-access
++    if isinstance(value, dict):
++        return {key: _replace_arrays(item, arrays) for key, item in value.items()}
++    if isinstance(value, (list, tuple)):
++        # Only walk containers of containers (lists of traces, say). A list of
++        # numbers or strings is plain data and walking it would be slow.
++        if value and isinstance(value[0], (dict, list, tuple)):
++            return [_replace_arrays(item, arrays) for item in value]
++        return value
++    array = _as_arrow_array(value)
++    if array is None:
++        return value
++    return {PLACEHOLDER: _add_array(arrays, array)}
++
++
++def _add_array(arrays, array):
++    """Index of the column that will carry ``array``."""
++    arrays.append(array)
++    return len(arrays) - 1
++
++
++def _is_plotly_figure(value):
++    plotly = sys.modules.get("plotly.basedatatypes")  # no import: only figures that exist
++    return plotly is not None and isinstance(value, plotly.BaseFigure)
++
++
++def _as_arrow_array(value):
++    """A single-chunk pyarrow Array for a value Arrow can carry, else None."""
++    if not (
++        hasattr(value, "__arrow_c_stream__")
++        or hasattr(value, "__arrow_c_array__")
++        or type(value).__module__ == "numpy"
++    ):
++        return None
++
++    import pyarrow as pa  # pylint: disable=import-outside-toplevel
++
++    try:
++        if hasattr(value, "__arrow_c_stream__"):
++            array = pa.chunked_array(value)
++            array = array.chunk(0) if array.num_chunks == 1 else array.combine_chunks()
++        elif hasattr(value, "__arrow_c_array__"):
++            array = pa.array(value)
++        else:
++            array = _numpy_to_arrow(value)
++    except (TypeError, ValueError, pa.ArrowException):
++        return None
++    if array is None or not _is_supported(array.type) or len(array) > MAX_LIST_LENGTH:
++        return None
++    if pa.types.is_timestamp(array.type) and array.type.tz is not None:
++        # plotly.py sends tz-aware times as wall-clock strings in their own
++        # timezone and plotly.js shows that wall clock; send the same.
++        import pyarrow.compute as pc  # pylint: disable=import-outside-toplevel
++
++        array = pc.local_timestamp(array)
++    return array
++
++
++def _numpy_to_arrow(array):
++    import pyarrow as pa  # pylint: disable=import-outside-toplevel
++
++    if array.ndim != 1:
++        return None
++    if array.dtype.kind in "fiuM":
++        return pa.array(array)  # no copy for numbers
++    if array.dtype.kind == "O" and len(array) and _is_timestamp(array[0]):
++        # go.Figure stores tz-aware datetimes as an object array of Timestamps.
++        import pandas as pd  # pylint: disable=import-outside-toplevel
++
++        return pa.array(pd.DatetimeIndex(array))
++    return None
++
++
++def _is_timestamp(value):
++    pandas = sys.modules.get("pandas")
++    return pandas is not None and isinstance(value, pandas.Timestamp)
++
++
++def _is_supported(arrow_type):
++    """Types the renderer turns into something plotly.js reads natively."""
++    import pyarrow.types as t  # pylint: disable=import-outside-toplevel
++
++    if t.is_timestamp(arrow_type) or t.is_float32(arrow_type) or t.is_float64(arrow_type):
++        return True
++    # 64-bit integers would arrive as BigInt64Array, which plotly.js cannot plot.
++    return t.is_integer(arrow_type) and arrow_type.bit_width <= 32
+diff --git a/dash/_callback.py b/dash/_callback.py
+index f07741e..fb2b715 100644
+--- a/dash/_callback.py
++++ b/dash/_callback.py
+@@ -46,6 +46,7 @@ from ._utils import (
+ from .background_callback.managers import BaseBackgroundCallbackManager
+ from ._callback_context import context_value
+ from ._streaming import StreamedCallbackResponse
++from ._arrow import to_arrow_response
+ from .types import CallbackExecutionResponse
+ from ._no_update import NoUpdate
+ from . import _validate
+@@ -1020,6 +1021,14 @@ def register_callback(
+                 allow_dynamic_callbacks,
+             )
+             try:
++                if not background:
++                    arrow_body = to_arrow_response(
++                        response,
++                        callback_ctx,
++                        get_app().backend.request_adapter().headers,
++                    )
++                    if arrow_body is not None:
++                        return arrow_body
+                 jsonResponse = to_json(response)
+             except TypeError:
+                 _validate.fail_callback_output(output_value, output)
+@@ -1099,6 +1108,14 @@ def register_callback(
+                 allow_dynamic_callbacks,
+             )
+             try:
++                if not background:
++                    arrow_body = to_arrow_response(
++                        response,
++                        callback_ctx,
++                        get_app().backend.request_adapter().headers,
++                    )
++                    if arrow_body is not None:
++                        return arrow_body
+                 jsonResponse = to_json(response)
+             except TypeError:
+                 _validate.fail_callback_output(output_value, output)
+diff --git a/dash/dash-renderer/package.json b/dash/dash-renderer/package.json
+index 17b6895..df8c487 100644
+--- a/dash/dash-renderer/package.json
++++ b/dash/dash-renderer/package.json
+@@ -23,6 +23,7 @@
+   "dependencies": {
+     "@babel/polyfill": "^7.12.1",
+     "@plotly/dash-component-plugins": "^1.2.3",
++    "apache-arrow": "21.2.0",
+     "cookie": "^2.0.1",
+     "cytoscape": "^3.29.2",
+     "cytoscape-dagre": "^2.5.0",
+diff --git a/dash/dash-renderer/src/actions/arrowResponse.ts b/dash/dash-renderer/src/actions/arrowResponse.ts
+new file mode 100644
+index 0000000..23ce67e
+--- /dev/null
++++ b/dash/dash-renderer/src/actions/arrowResponse.ts
+@@ -0,0 +1,96 @@
++import {DataType, TimeUnit, tableFromIPC, type Vector} from 'apache-arrow';
++
++// Server side: dash/_arrow.py. Each column holds one array as a single list
++// value; the rest of the response is JSON in the schema metadata, with
++// {"__arrow__": i} wherever column i belongs.
++export const ARROW_MIMETYPE = 'application/vnd.apache.arrow.stream';
++const PLACEHOLDER = '__arrow__';
++
++export function decodeArrowResponse(buffer: ArrayBuffer) {
++    const table = tableFromIPC(new Uint8Array(buffer));
++    const arrays = table.schema.fields.map((_field, i) =>
++        toPlotlyArray(table.getChildAt(i)!.get(0) as Vector)
++    );
++    return JSON.parse(table.schema.metadata.get('dash')!, (_key, value) =>
++        value !== null && typeof value === 'object' && PLACEHOLDER in value
++            ? arrays[value[PLACEHOLDER]]
++            : value
++    );
++}
++
++function toPlotlyArray(values: Vector): ArrayLike<unknown> {
++    if (DataType.isTimestamp(values.type)) {
++        return plotlyDates(values);
++    }
++    if (values.nullCount === 0) {
++        // A view on the received buffer, no copy.
++        return values.toArray();
++    }
++    if (DataType.isFloat(values.type)) {
++        return nullsAsNaN(values);
++    }
++    return Array.from(values);
++}
++
++// Null slots hold arbitrary values in the data buffer; plotly.js shows NaN as a gap.
++function nullsAsNaN(values: Vector) {
++    const result = (values.toArray() as Float32Array | Float64Array).slice();
++    for (let i = 0; i < result.length; i++) {
++        if (!values.isValid(i)) result[i] = NaN;
++    }
++    return result;
++}
++
++// Timestamps arrive as wall-clock time (dash/_arrow.py drops time zones the
++// way plotly.py's JSON does). Stock plotly.js reads date axes from strings;
++// bare numbers would be taken as local-time milliseconds.
++const MS_PER_UNIT = {
++    [TimeUnit.SECOND]: 1e3,
++    [TimeUnit.MILLISECOND]: 1,
++    [TimeUnit.MICROSECOND]: 1e-3,
++    [TimeUnit.NANOSECOND]: 1e-6
++};
++const DAY_MS = 86_400_000;
++
++function plotlyDates(values: Vector) {
++    const scale = MS_PER_UNIT[values.type.unit as TimeUnit];
++    const raw = values.toArray() as BigInt64Array;
++    const ms = new Float64Array(raw.length);
++    for (let i = 0; i < raw.length; i++) ms[i] = Number(raw[i]) * scale;
++    // plotly.js with patches/optimisations/plotly-date-typed-array.patch sets
++    // this flag and takes UTC milliseconds as they are.
++    if ((window as any).Plotly?.typedDateAxes) {
++        for (let i = 0; values.nullCount && i < ms.length; i++) if (!values.isValid(i)) ms[i] = NaN;
++        return ms;
++    }
++    const dates: (string | null)[] = isoStrings(ms);
++    for (let i = 0; values.nullCount && i < ms.length; i++) {
++        if (!values.isValid(i)) dates[i] = null;
++    }
++    return dates;
++}
++
++// ISO strings without a Date per value: the date part is made once per day,
++// the time part once per second of the day.
++const timeOfDay: string[] = [];
++const pad = (n: number) => (n < 10 ? '0' : '') + n;
++
++function isoStrings(ms: Float64Array) {
++    const dates = new Array<string>(ms.length);
++    let dayStart = NaN;
++    let prefix = '';
++    for (let i = 0; i < ms.length; i++) {
++        const t = ms[i];
++        if (!(t >= dayStart && t < dayStart + DAY_MS)) {
++            dayStart = Math.floor(t / DAY_MS) * DAY_MS;
++            prefix = new Date(dayStart).toISOString().slice(0, 11);
++        }
++        const second = Math.floor((t - dayStart) / 1000);
++        const time = (timeOfDay[second] ??= `${pad(Math.floor(second / 3600))}:${pad(
++            Math.floor(second / 60) % 60
++        )}:${pad(second % 60)}`);
++        const millis = Math.round(t - dayStart - second * 1000);
++        dates[i] = millis ? `${prefix}${time}.${String(millis).padStart(3, '0')}` : prefix + time;
++    }
++    return dates;
++}
+diff --git a/dash/dash-renderer/src/actions/callbacks.ts b/dash/dash-renderer/src/actions/callbacks.ts
+index 83d3fe5..48beac4 100644
+--- a/dash/dash-renderer/src/actions/callbacks.ts
++++ b/dash/dash-renderer/src/actions/callbacks.ts
+@@ -15,6 +15,7 @@ import {
+ } from 'ramda';
+ 
+ import {STATUS, JWT_EXPIRED_MESSAGE} from '../constants/constants';
++import {ARROW_MIMETYPE, decodeArrowResponse} from './arrowResponse';
+ import {MAX_AUTH_RETRIES} from './constants';
+ import {
+     CallbackActionType,
+@@ -609,6 +610,7 @@ function handleServerside(
+ 
+     const fetchCallback = async () => {
+         const headers = getCSRFHeader(config) as any;
++        headers.Accept = `application/json, ${ARROW_MIMETYPE}`;
+         let url = `${urlBase(config)}_dash-update-component`;
+         let newBody = body;
+ 
+@@ -849,7 +851,10 @@ function handleServerside(
+                     handleStreamedResponse(res);
+                     return;
+                 }
+-                res.json().then((data: CallbackResponseData) => {
++                const body = contentType.startsWith(ARROW_MIMETYPE)
++                    ? res.arrayBuffer().then(decodeArrowResponse)
++                    : res.json();
++                body.then((data: CallbackResponseData) => {
+                     if (!cacheKey && data.cacheKey) {
+                         cacheKey = data.cacheKey;
+                     }

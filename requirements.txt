@@ -1,0 +1,14 @@
+# Dash 4.5.0 is patched by setup.sh (see patches/dash-arrow.patch).
+dash==4.5.0
+plotly==7.1.0
+fastapi==0.164.0
+uvicorn==0.54.0
+orjson==3.13.0
+msgspec==0.22.0
+polars==2.1.0
+pyarrow==26.0.1
+pandas==3.1.1
+numpy==2.5.5
+playwright==1.65.2
+matplotlib==3.11.2
+pytest==9.2.0
