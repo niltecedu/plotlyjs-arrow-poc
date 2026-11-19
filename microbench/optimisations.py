@@ -14,6 +14,8 @@ section 4 of benchmark.md. Running one experiment (--only) keeps the others' res
    times without a zone (microbench/dash_tz_index.py). End to end, every transport.
 4. Compression: the benchmark's gzip against what Flask-Compress and Starlette's
    GZipMiddleware do by default, and zstd. Server only: time to compress a response.
+5. zstd level 1 instead of gzip level 1, estimated end to end from the measured
+   gzip results and the measured zstd compression time of the same responses.
 """
 
 import argparse
@@ -26,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
 from time import perf_counter
+from types import SimpleNamespace
 
 from playwright.sync_api import sync_playwright
 
@@ -314,7 +317,102 @@ def compression_experiment(repeats):
     }
 
 
-EXPERIMENTS = ("date-axis", "shared-x", "tz-index", "compression")
+ZSTD_CASES = [("fastapi", "scale", 10_000_000, 10), ("fastapi", "scale", 5_000_000, 100),
+              ("fastapi", "forecast", 1_440 * 500, 500), ("dash", "scale", 10_000_000, 10),
+              ("dash", "scale", 5_000_000, 100), ("dash", "forecast", 1_440 * 500, 500)]
+
+
+def median_ms(compress, body, repeats):
+    times, out = [], b""
+    for _ in range(repeats):
+        start = perf_counter()
+        out = compress(body)
+        times.append((perf_counter() - start) * 1000)
+    return median(times), len(out)
+
+
+def zstd_estimate_experiment(repeats):
+    import dash_app  # noqa: PLC0415  only these experiments need the Dash figure
+
+    measured = {}
+    for suite in ("full", "forecast"):
+        for case in json.loads((ROOT / "results" / f"{suite}.json").read_text())["cases"]:
+            measured[(case["app"], case["transport"], case["compression"], case["points"], case["traces"])] = case
+
+    def ignore(*_args):
+        pass
+
+    ctx = SimpleNamespace(dash_response=SimpleNamespace(append_header=ignore, set_header=ignore))
+
+    def response_body(app, transport, workload, points, traces):
+        if app == "fastapi":
+            return encode_columns(make_frame(points, traces, workload), transport)[0]
+        response = {"multi": True, "response": {"graph": {"figure": dash_app.figure(points, traces, workload)}}}
+        if transport == "orjson":
+            return dash_app.stock_to_json(response).encode()
+        return dash_app.stock_to_arrow_response(response, ctx, {"Accept": "application/vnd.apache.arrow.stream"})
+
+    rows = []
+    for app, workload, points, traces in ZSTD_CASES:
+        for transport in ("orjson", "arrow"):
+            body = response_body(app, transport, workload, points, traces)
+            none, gzip1 = (measured[(app, transport, level, points, traces)] for level in ("none", "gzip1"))
+            gzip_ms, gzip_bytes = median_ms(COMPRESSORS["gzip1"][1], body, repeats)
+            zstd_ms, zstd_bytes = median_ms(COMPRESSORS["zstd1"][1], body, repeats)
+            shape = (f"{points // 1_000_000}M points x {traces} traces" if workload == "scale"
+                     else f"{points // traces:,} rows x {traces} sites")
+            rows.append({
+                "case": f"{'FastAPI' if app == 'fastapi' else 'Dash'}, {transport}, {workload} {shape}",
+                "modes": {
+                    "none": {"total_ms": none["total_ms"], "compress_ms": None, "breakeven_mbps": None,
+                             "wire_bytes": len(body)},
+                    "gzip1": {"total_ms": gzip1["total_ms"], "compress_ms": gzip_ms,
+                              "breakeven_mbps": (len(body) - gzip_bytes) * 8 / 1e3 / gzip_ms,
+                              "wire_bytes": gzip_bytes},
+                    # The measured gzip1 total, with zstd's compression time in place of gzip's.
+                    "zstd1": {"total_ms": gzip1["total_ms"] - gzip1["compress_ms"] + zstd_ms,
+                              "compress_ms": zstd_ms,
+                              "breakeven_mbps": (len(body) - zstd_bytes) * 8 / 1e3 / zstd_ms,
+                              "wire_bytes": zstd_bytes},
+                },
+            })
+            print(json.dumps(rows[-1]), flush=True)
+            del body
+    return {
+        "title": "Estimate: zstd level 1 instead of gzip level 1",
+        "description": (
+            "An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured "
+            "end-to-end totals from sections 2 and 3. *zstd level 1* is the measured gzip level 1 total "
+            "with its server compression time replaced by zstd level 1's, measured here on the same "
+            "response body; the browser's decompression time is assumed the same (zstd usually "
+            "decompresses faster than gzip). *Break-even* is the link speed below which compressing "
+            "saves more transfer time than it costs: bytes saved divided by compression time. "
+            "Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox "
+            "from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to "
+            "localhost. A browser that does not offer zstd still gets gzip."),
+        "notes": (
+            "Over loopback, zstd level 1 would cost mostly under 5% (up to 10%, where the measured "
+            "gzip total itself ran high) against up to 19% for gzip level 1. The break-even link speed "
+            "rises from 0.5-1.5 Gbit/s to 1.7-8 Gbit/s for JSON and from 23-330 Mbit/s to 0.5-5 Gbit/s "
+            "for Arrow, so compressing pays off on almost any network. JSON comes out 8-31% smaller "
+            "than with gzip level 1. Arrow comes out about the same size, up to 20% larger for the "
+            "scale responses (random float32 values hardly compress) and 13% smaller for Dash's "
+            "forecast, so zstd-compressed JSON can be smaller than zstd-compressed Arrow: Arrow's "
+            "gains are in CPU time, not bytes. Serving zstd needs server support: it is in the Python 3.14+ standard "
+            "library, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends "
+            "on its version."),
+        "baseline": "none",
+        "columns": {"none": "No compression (measured)", "gzip1": "gzip level 1 (measured)",
+                    "zstd1": "zstd level 1 (estimated)"},
+        "detail": {"compress_ms": "Compress (ms)", "breakeven_mbps": "Break-even (Mbit/s)"},
+        "detail_summary": "Compression time, break-even link speed and size",
+        "rows": rows,
+    }
+
+
+EXPERIMENTS = ("date-axis", "shared-x", "tz-index", "compression", "zstd-estimate")
+SERVER_ONLY = {"compression": lambda args: compression_experiment(args.repeats),
+               "zstd-estimate": lambda args: zstd_estimate_experiment(args.repeats)}
 
 
 def main():
@@ -335,9 +433,10 @@ def main():
     selected = [args.only] if args.only else list(EXPERIMENTS)
 
     experiments = {}
-    if "compression" in selected:
-        experiments["compression"] = {"id": "compression", **compression_experiment(args.repeats)}
-    browser_runs = [key for key in selected if key != "compression"]
+    for key in selected:
+        if key in SERVER_ONLY:
+            experiments[key] = {"id": key, **SERVER_ONLY[key](args)}
+    browser_runs = [key for key in selected if key not in SERVER_ONLY]
     if browser_runs:
         with sync_playwright() as playwright:
             browser, renderer = bench.launch(playwright, args.headless)

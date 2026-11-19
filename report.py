@@ -404,7 +404,7 @@ def micro_section(micro):
                 out.append("| " + " | ".join(cells) + " |")
             if "detail" in item:  # where the time goes, per mode
                 header = ["Case", "Variant", *item["detail"].values(), "Total", "Wire MB"]
-                summary = "Where the time goes" if item["detail"] else "Sizes"
+                summary = item.get("detail_summary") or ("Where the time goes" if item["detail"] else "Sizes")
                 out += ["", f"<details><summary>{summary}</summary>", "",
                         "| " + " | ".join(header) + " |", separator(len(header))]
                 for row in item["rows"]:

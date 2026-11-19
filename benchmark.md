@@ -1442,3 +1442,70 @@ Server only: the time to compress one response body, and its size. The benchmark
 </details>
 
 The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the same zlib. Their default levels are 2-27x slower for a payload at most 14% smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. *Not part of the benchmarks above, which use gzip; measured here as a lead.*
+
+### Estimate: zstd level 1 instead of gzip level 1
+
+An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured end-to-end totals from sections 2 and 3. *zstd level 1* is the measured gzip level 1 total with its server compression time replaced by zstd level 1's, measured here on the same response body; the browser's decompression time is assumed the same (zstd usually decompresses faster than gzip). *Break-even* is the link speed below which compressing saves more transfer time than it costs: bytes saved divided by compression time. Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to localhost. A browser that does not offer zstd still gets gzip.
+
+- **Command:** `python microbench/optimisations.py --only zstd-estimate --repeats 3`
+- **Finished:** 2026-11-19T11:26:50+00:00 (median of 3)
+
+| Case | No compression (measured) | gzip level 1 (measured) | zstd level 1 (estimated) |
+| --- | --- | --- | --- |
+| FastAPI, orjson, scale 10M points x 10 traces | 8,219 ms | 9,015 ms ▼ **-1.10x slower** | 8,552 ms = same (0.96x) |
+| FastAPI, arrow, scale 10M points x 10 traces | 7,432 ms | 8,333 ms ▼ **-1.12x slower** | 7,617 ms = same (0.98x) |
+| FastAPI, orjson, scale 5M points x 100 traces | 3,360 ms | 3,446 ms = same (0.97x) | 3,253 ms = same (1.03x) |
+| FastAPI, arrow, scale 5M points x 100 traces | 2,726 ms | 3,066 ms ▼ **-1.12x slower** | 2,785 ms = same (0.98x) |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | 1,338 ms | 1,474 ms ▼ **-1.10x slower** | 1,388 ms = same (0.96x) |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | 1,264 ms | 1,503 ms ▼ **-1.19x slower** | 1,388 ms ▼ **-1.10x slower** |
+| Dash, orjson, scale 10M points x 10 traces | 12,662 ms | 14,043 ms ▼ **-1.11x slower** | 13,139 ms = same (0.96x) |
+| Dash, arrow, scale 10M points x 10 traces | 11,101 ms | 12,594 ms ▼ **-1.13x slower** | 11,546 ms = same (0.96x) |
+| Dash, orjson, scale 5M points x 100 traces | 5,385 ms | 5,875 ms ▼ **-1.09x slower** | 5,446 ms = same (0.99x) |
+| Dash, arrow, scale 5M points x 100 traces | 4,408 ms | 5,097 ms ▼ **-1.16x slower** | 4,654 ms ▼ **-1.06x slower** |
+| Dash, orjson, forecast 1,440 rows x 500 sites | 6,712 ms | 6,891 ms = same (0.97x) | 6,766 ms = same (0.99x) |
+| Dash, arrow, forecast 1,440 rows x 500 sites | 4,521 ms | 4,528 ms = same (1.00x) | 4,412 ms = same (1.02x) |
+
+<details><summary>Compression time, break-even link speed and size</summary>
+
+| Case | Variant | Compress (ms) | Break-even (Mbit/s) | Total | Wire MB |
+| --- | --- | --- | --- | --- | --- |
+| FastAPI, orjson, scale 10M points x 10 traces | No compression (measured) | - | - | **8,219** | 117.55 |
+| FastAPI, orjson, scale 10M points x 10 traces | gzip level 1 (measured) | 846 | 674 | **9,015** | 46.27 |
+| FastAPI, orjson, scale 10M points x 10 traces | zstd level 1 (estimated) | 312 | 2,039 | **8,552** | 37.98 |
+| FastAPI, arrow, scale 10M points x 10 traces | No compression (measured) | - | - | **7,432** | 48.00 |
+| FastAPI, arrow, scale 10M points x 10 traces | gzip level 1 (measured) | 882 | 113 | **8,333** | 35.50 |
+| FastAPI, arrow, scale 10M points x 10 traces | zstd level 1 (estimated) | 75 | 1,355 | **7,617** | 35.28 |
+| FastAPI, orjson, scale 5M points x 100 traces | No compression (measured) | - | - | **3,360** | 48.70 |
+| FastAPI, orjson, scale 5M points x 100 traces | gzip level 1 (measured) | 391 | 577 | **3,446** | 20.52 |
+| FastAPI, orjson, scale 5M points x 100 traces | zstd level 1 (estimated) | 149 | 1,679 | **3,253** | 17.39 |
+| FastAPI, arrow, scale 5M points x 100 traces | No compression (measured) | - | - | **2,726** | 20.41 |
+| FastAPI, arrow, scale 5M points x 100 traces | gzip level 1 (measured) | 324 | 142 | **3,066** | 14.68 |
+| FastAPI, arrow, scale 5M points x 100 traces | zstd level 1 (estimated) | 28 | 1,403 | **2,785** | 15.54 |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **1,338** | 13.14 |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 110 | 478 | **1,474** | 6.56 |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 19 | 2,964 | **1,388** | 6.03 |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **1,264** | 5.92 |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 120 | 23 | **1,503** | 5.57 |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 5.5 | 524 | **1,388** | 5.56 |
+| Dash, orjson, scale 10M points x 10 traces | No compression (measured) | - | - | **12,662** | 315.87 |
+| Dash, orjson, scale 10M points x 10 traces | gzip level 1 (measured) | 1,393 | 1,450 | **14,043** | 63.41 |
+| Dash, orjson, scale 10M points x 10 traces | zstd level 1 (estimated) | 335 | 6,488 | **13,139** | 44.50 |
+| Dash, arrow, scale 10M points x 10 traces | No compression (measured) | - | - | **11,101** | 120.01 |
+| Dash, arrow, scale 10M points x 10 traces | gzip level 1 (measured) | 1,576 | 277 | **12,594** | 65.53 |
+| Dash, arrow, scale 10M points x 10 traces | zstd level 1 (estimated) | 251 | 1,492 | **11,546** | 73.18 |
+| Dash, orjson, scale 5M points x 100 traces | No compression (measured) | - | - | **5,385** | 158.06 |
+| Dash, orjson, scale 5M points x 100 traces | gzip level 1 (measured) | 697 | 1,462 | **5,875** | 30.72 |
+| Dash, orjson, scale 5M points x 100 traces | zstd level 1 (estimated) | 158 | 6,893 | **5,446** | 21.52 |
+| Dash, arrow, scale 5M points x 100 traces | No compression (measured) | - | - | **4,408** | 60.06 |
+| Dash, arrow, scale 5M points x 100 traces | gzip level 1 (measured) | 727 | 315 | **5,097** | 31.39 |
+| Dash, arrow, scale 5M points x 100 traces | zstd level 1 (estimated) | 146 | 1,229 | **4,654** | 37.58 |
+| Dash, orjson, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **6,712** | 29.00 |
+| Dash, orjson, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 208 | 785 | **6,891** | 8.56 |
+| Dash, orjson, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 24 | 7,808 | **6,766** | 5.94 |
+| Dash, arrow, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **4,521** | 11.79 |
+| Dash, arrow, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 130 | 334 | **4,528** | 6.36 |
+| Dash, arrow, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 9.6 | 5,187 | **4,412** | 5.56 |
+
+</details>
+
+Over loopback, zstd level 1 would cost mostly under 5% (up to 10%, where the measured gzip total itself ran high) against up to 19% for gzip level 1. The break-even link speed rises from 0.5-1.5 Gbit/s to 1.7-8 Gbit/s for JSON and from 23-330 Mbit/s to 0.5-5 Gbit/s for Arrow, so compressing pays off on almost any network. JSON comes out 8-31% smaller than with gzip level 1. Arrow comes out about the same size, up to 20% larger for the scale responses (random float32 values hardly compress) and 13% smaller for Dash's forecast, so zstd-compressed JSON can be smaller than zstd-compressed Arrow: Arrow's gains are in CPU time, not bytes. Serving zstd needs server support: it is in the Python 3.14+ standard library, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends on its version.

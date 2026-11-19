@@ -613,6 +613,304 @@
    "command": "python microbench/optimisations.py --only compression --repeats 3",
    "finished": "2026-11-19T11:18:00+00:00",
    "repeats": 3
+  },
+  {
+   "id": "zstd-estimate",
+   "title": "Estimate: zstd level 1 instead of gzip level 1",
+   "description": "An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured end-to-end totals from sections 2 and 3. *zstd level 1* is the measured gzip level 1 total with its server compression time replaced by zstd level 1's, measured here on the same response body; the browser's decompression time is assumed the same (zstd usually decompresses faster than gzip). *Break-even* is the link speed below which compressing saves more transfer time than it costs: bytes saved divided by compression time. Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to localhost. A browser that does not offer zstd still gets gzip.",
+   "notes": "Over loopback, zstd level 1 would cost mostly under 5% (up to 10%, where the measured gzip total itself ran high) against up to 19% for gzip level 1. The break-even link speed rises from 0.5-1.5 Gbit/s to 1.7-8 Gbit/s for JSON and from 23-330 Mbit/s to 0.5-5 Gbit/s for Arrow, so compressing pays off on almost any network. JSON comes out 8-31% smaller than with gzip level 1. Arrow comes out about the same size, up to 20% larger for the scale responses (random float32 values hardly compress) and 13% smaller for Dash's forecast, so zstd-compressed JSON can be smaller than zstd-compressed Arrow: Arrow's gains are in CPU time, not bytes. Serving zstd needs server support: it is in the Python 3.14+ standard library, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends on its version.",
+   "baseline": "none",
+   "columns": {
+    "none": "No compression (measured)",
+    "gzip1": "gzip level 1 (measured)",
+    "zstd1": "zstd level 1 (estimated)"
+   },
+   "detail": {
+    "compress_ms": "Compress (ms)",
+    "breakeven_mbps": "Break-even (Mbit/s)"
+   },
+   "rows": [
+    {
+     "case": "FastAPI, orjson, scale 10M points x 10 traces",
+     "modes": {
+      "none": {
+       "total_ms": 8219.3,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 117550055
+      },
+      "gzip1": {
+       "total_ms": 9015.1,
+       "compress_ms": 845.7286279954133,
+       "breakeven_mbps": 674.2648517783091,
+       "wire_bytes": 46269419
+      },
+      "zstd1": {
+       "total_ms": 8551.61258200212,
+       "compress_ms": 312.194582002121,
+       "breakeven_mbps": 2038.9115144723282,
+       "wire_bytes": 37982914
+      }
+     }
+    },
+    {
+     "case": "FastAPI, arrow, scale 10M points x 10 traces",
+     "modes": {
+      "none": {
+       "total_ms": 7431.6,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 48003872
+      },
+      "gzip1": {
+       "total_ms": 8333,
+       "compress_ms": 882.2632139999769,
+       "breakeven_mbps": 113.33967280200194,
+       "wire_bytes": 35504444
+      },
+      "zstd1": {
+       "total_ms": 7617.178703005036,
+       "compress_ms": 75.12270300503587,
+       "breakeven_mbps": 1354.9453883891354,
+       "wire_bytes": 35280477
+      }
+     }
+    },
+    {
+     "case": "FastAPI, orjson, scale 5M points x 100 traces",
+     "modes": {
+      "none": {
+       "total_ms": 3359.6,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 48697610
+      },
+      "gzip1": {
+       "total_ms": 3445.8,
+       "compress_ms": 390.8217819989659,
+       "breakeven_mbps": 576.7445582155307,
+       "wire_bytes": 20522068
+      },
+      "zstd1": {
+       "total_ms": 3253.4857380046087,
+       "compress_ms": 149.12773800460855,
+       "breakeven_mbps": 1679.2611981565833,
+       "wire_bytes": 17394557
+      }
+     }
+    },
+    {
+     "case": "FastAPI, arrow, scale 5M points x 100 traces",
+     "modes": {
+      "none": {
+       "total_ms": 2726.5,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 20410296
+      },
+      "gzip1": {
+       "total_ms": 3065.6,
+       "compress_ms": 324.01869400200667,
+       "breakeven_mbps": 141.5203284527652,
+       "wire_bytes": 14678392
+      },
+      "zstd1": {
+       "total_ms": 2785.4771599953565,
+       "compress_ms": 27.781159995356575,
+       "breakeven_mbps": 1403.002898601597,
+       "wire_bytes": 15538165
+      }
+     }
+    },
+    {
+     "case": "FastAPI, orjson, forecast 1,440 rows x 500 sites",
+     "modes": {
+      "none": {
+       "total_ms": 1338.2,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 13140121
+      },
+      "gzip1": {
+       "total_ms": 1473.7,
+       "compress_ms": 110.07514700031606,
+       "breakeven_mbps": 477.95980685675516,
+       "wire_bytes": 6563684
+      },
+      "zstd1": {
+       "total_ms": 1388.3430050000236,
+       "compress_ms": 19.197005000023637,
+       "breakeven_mbps": 2963.940260469273,
+       "wire_bytes": 6027774
+      }
+     }
+    },
+    {
+     "case": "FastAPI, arrow, forecast 1,440 rows x 500 sites",
+     "modes": {
+      "none": {
+       "total_ms": 1263.7,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 5917816
+      },
+      "gzip1": {
+       "total_ms": 1503.2,
+       "compress_ms": 120.11350200191373,
+       "breakeven_mbps": 23.343054305046635,
+       "wire_bytes": 5567339
+      },
+      "zstd1": {
+       "total_ms": 1387.9694429983506,
+       "compress_ms": 5.507442998350598,
+       "breakeven_mbps": 523.7189020138425,
+       "wire_bytes": 5557272
+      }
+     }
+    },
+    {
+     "case": "Dash, orjson, scale 10M points x 10 traces",
+     "modes": {
+      "none": {
+       "total_ms": 12661.5,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 315867149
+      },
+      "gzip1": {
+       "total_ms": 14042.9,
+       "compress_ms": 1392.6670150030986,
+       "breakeven_mbps": 1450.184581269419,
+       "wire_bytes": 63414120
+      },
+      "zstd1": {
+       "total_ms": 13138.527643996797,
+       "compress_ms": 334.6216439967975,
+       "breakeven_mbps": 6487.720130921289,
+       "wire_bytes": 44500702
+      }
+     }
+    },
+    {
+     "case": "Dash, arrow, scale 10M points x 10 traces",
+     "modes": {
+      "none": {
+       "total_ms": 11101.2,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 120011904
+      },
+      "gzip1": {
+       "total_ms": 12594.1,
+       "compress_ms": 1575.757179998618,
+       "breakeven_mbps": 276.5844722347273,
+       "wire_bytes": 65533158
+      },
+      "zstd1": {
+       "total_ms": 11545.97088099693,
+       "compress_ms": 251.03888099692995,
+       "breakeven_mbps": 1492.4946068596523,
+       "wire_bytes": 73177632
+      }
+     }
+    },
+    {
+     "case": "Dash, orjson, scale 5M points x 100 traces",
+     "modes": {
+      "none": {
+       "total_ms": 5385.4,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 158059119
+      },
+      "gzip1": {
+       "total_ms": 5874.9,
+       "compress_ms": 696.8488000056823,
+       "breakeven_mbps": 1461.896216211742,
+       "wire_bytes": 30719041
+      },
+      "zstd1": {
+       "total_ms": 5445.816270998213,
+       "compress_ms": 158.4792709982139,
+       "breakeven_mbps": 6892.592028722234,
+       "wire_bytes": 21517499
+      }
+     }
+    },
+    {
+     "case": "Dash, arrow, scale 5M points x 100 traces",
+     "modes": {
+      "none": {
+       "total_ms": 4407.6,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 60057008
+      },
+      "gzip1": {
+       "total_ms": 5096.8,
+       "compress_ms": 727.451487997314,
+       "breakeven_mbps": 315.27919563599386,
+       "wire_bytes": 31388218
+      },
+      "zstd1": {
+       "total_ms": 4653.572301003657,
+       "compress_ms": 146.29130100365728,
+       "breakeven_mbps": 1228.9688229343542,
+       "wire_bytes": 37583577
+      }
+     }
+    },
+    {
+     "case": "Dash, orjson, forecast 1,440 rows x 500 sites",
+     "modes": {
+      "none": {
+       "total_ms": 6712.5,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 29002909
+      },
+      "gzip1": {
+       "total_ms": 6890.9,
+       "compress_ms": 208.3411409985274,
+       "breakeven_mbps": 784.8251152716674,
+       "wire_bytes": 8563989
+      },
+      "zstd1": {
+       "total_ms": 6765.841400996914,
+       "compress_ms": 23.633400996914133,
+       "breakeven_mbps": 7807.698943715021,
+       "wire_bytes": 5937599
+      }
+     }
+    },
+    {
+     "case": "Dash, arrow, forecast 1,440 rows x 500 sites",
+     "modes": {
+      "none": {
+       "total_ms": 4520.9,
+       "compress_ms": null,
+       "breakeven_mbps": null,
+       "wire_bytes": 11788304
+      },
+      "gzip1": {
+       "total_ms": 4528.3,
+       "compress_ms": 129.85751400265144,
+       "breakeven_mbps": 334.37830943778437,
+       "wire_bytes": 6360612
+      },
+      "zstd1": {
+       "total_ms": 4412.112855999791,
+       "compress_ms": 9.601855999790132,
+       "breakeven_mbps": 5186.844710136098,
+       "wire_bytes": 5562887
+      }
+     }
+    }
+   ],
+   "command": "python microbench/optimisations.py --only zstd-estimate --repeats 3",
+   "finished": "2026-11-19T11:26:50+00:00",
+   "repeats": 3,
+   "detail_summary": "Compression time, break-even link speed and size"
   }
  ]
 }
