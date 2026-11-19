@@ -13,9 +13,9 @@ section 4 of benchmark.md. Running one experiment (--only) keeps the others' res
 3. Dash app code: a tz-aware Europe/London index versus the same wall-clock
    times without a zone (microbench/dash_tz_index.py). End to end, every transport.
 4. Compression: the benchmark's gzip against what Flask-Compress and Starlette's
-   GZipMiddleware do by default, and zstd. Server only: time to compress a response.
-5. zstd level 1 instead of gzip level 1, estimated end to end from the measured
-   gzip results and the measured zstd compression time of the same responses.
+   GZipMiddleware do by default, zstd and brotli. Server only: time to compress a response.
+5. zstd or brotli instead of gzip level 1, estimated end to end from the measured
+   gzip results and the measured compression time of the same responses.
 """
 
 import argparse
@@ -30,6 +30,7 @@ from statistics import median
 from time import perf_counter
 from types import SimpleNamespace
 
+import brotli
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -267,6 +268,8 @@ COMPRESSORS = {
                   lambda body: gzip_file(body, 9, 65536)),
     "zstd1": ("zstd level 1", lambda body: zstd.compress(body, 1)),
     "zstd3": ("zstd level 3 (zstd's default)", lambda body: zstd.compress(body, 3)),
+    "brotli1": ("brotli quality 1", lambda body: brotli.compress(body, quality=1)),
+    "brotli4": ("brotli quality 4", lambda body: brotli.compress(body, quality=4)),
 }
 
 
@@ -296,19 +299,23 @@ def compression_experiment(repeats):
         rows.append({"case": f"{case} ({len(body) / 1e6:.1f} MB)", "modes": modes})
         print(json.dumps(rows[-1]), flush=True)
     return {
-        "title": "Compression: the benchmark's gzip, framework defaults, and zstd",
+        "title": "Compression: the benchmark's gzip, framework defaults, zstd and brotli",
         "description": (
             "Server only: the time to compress one response body, and its size. The benchmarks above "
             "compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses "
             "only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's "
             "`GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the "
             "Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox "
-            "(`Content-Encoding: zstd`). Values are full-precision random floats, which compress less "
-            "than typical real data."),
+            "(`Content-Encoding: zstd`). brotli (the `brotli` package) is accepted by every current "
+            "browser (`Content-Encoding: br`), over HTTPS and on localhost. Values are full-precision "
+            "random floats, which compress less than typical real data."),
         "notes": (
-            "The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the "
-            "same zlib. Their default levels are 2-27x slower for a payload at most 14% smaller. zstd "
-            "level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. "
+            "The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it "
+            "is the same zlib. Their default levels are 2-31x slower for a payload at most 14% "
+            "smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% "
+            "smaller. brotli quality 1 is 1.3-5.5x faster than gzip level 1, with JSON up to "
+            "26% smaller and Arrow about the same size, but slower than zstd level 1 and mostly "
+            "larger. brotli quality 4 is smaller again, but slower than gzip level 1 for JSON. "
             "*Not part of the benchmarks above, which use gzip; measured here as a lead.*"),
         "baseline": "gzip1",
         "columns": {key: label for key, (label, _fn) in COMPRESSORS.items()},
@@ -331,7 +338,10 @@ def median_ms(compress, body, repeats):
     return median(times), len(out)
 
 
-def zstd_estimate_experiment(repeats):
+ESTIMATED = ("zstd1", "brotli1")
+
+
+def compression_estimate_experiment(repeats):
     import dash_app  # noqa: PLC0415  only these experiments need the Dash figure
 
     measured = {}
@@ -358,7 +368,7 @@ def zstd_estimate_experiment(repeats):
             body = response_body(app, transport, workload, points, traces)
             none, gzip1 = (measured[(app, transport, level, points, traces)] for level in ("none", "gzip1"))
             gzip_ms, gzip_bytes = median_ms(COMPRESSORS["gzip1"][1], body, repeats)
-            zstd_ms, zstd_bytes = median_ms(COMPRESSORS["zstd1"][1], body, repeats)
+            others = {key: median_ms(COMPRESSORS[key][1], body, repeats) for key in ESTIMATED}
             shape = (f"{points // 1_000_000}M points x {traces} traces" if workload == "scale"
                      else f"{points // traces:,} rows x {traces} sites")
             rows.append({
@@ -369,50 +379,55 @@ def zstd_estimate_experiment(repeats):
                     "gzip1": {"total_ms": gzip1["total_ms"], "compress_ms": gzip_ms,
                               "breakeven_mbps": (len(body) - gzip_bytes) * 8 / 1e3 / gzip_ms,
                               "wire_bytes": gzip_bytes},
-                    # The measured gzip1 total, with zstd's compression time in place of gzip's.
-                    "zstd1": {"total_ms": gzip1["total_ms"] - gzip1["compress_ms"] + zstd_ms,
-                              "compress_ms": zstd_ms,
-                              "breakeven_mbps": (len(body) - zstd_bytes) * 8 / 1e3 / zstd_ms,
-                              "wire_bytes": zstd_bytes},
+                    # The measured gzip1 total, with this compressor's time in place of gzip's.
+                    **{key: {"total_ms": gzip1["total_ms"] - gzip1["compress_ms"] + other_ms,
+                             "compress_ms": other_ms,
+                             "breakeven_mbps": (len(body) - other_bytes) * 8 / 1e3 / other_ms,
+                             "wire_bytes": other_bytes}
+                       for key, (other_ms, other_bytes) in others.items()},
                 },
             })
             print(json.dumps(rows[-1]), flush=True)
             del body
     return {
-        "title": "Estimate: zstd level 1 instead of gzip level 1",
+        "title": "Estimate: zstd or brotli instead of gzip level 1",
         "description": (
             "An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured "
-            "end-to-end totals from sections 2 and 3. *zstd level 1* is the measured gzip level 1 total "
-            "with its server compression time replaced by zstd level 1's, measured here on the same "
-            "response body; the browser's decompression time is assumed the same (zstd usually "
-            "decompresses faster than gzip). *Break-even* is the link speed below which compressing "
+            "end-to-end totals from sections 2 and 3. *zstd level 1* and *brotli quality 1* are the "
+            "measured gzip level 1 total with its server compression time replaced by theirs, measured "
+            "here on the same response body; the browser's decompression time is assumed the same "
+            "(both usually decompress at least as fast as gzip). *Break-even* is the link speed below which compressing "
             "saves more transfer time than it costs: bytes saved divided by compression time. "
             "Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox "
             "from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to "
-            "localhost. A browser that does not offer zstd still gets gzip."),
+            "localhost. brotli is accepted by every current browser over HTTPS and on localhost. A "
+            "browser that does not offer an encoding still gets gzip."),
         "notes": (
-            "Over loopback, zstd level 1 would cost mostly under 5% (up to 10%, where the measured "
-            "gzip total itself ran high) against up to 19% for gzip level 1. The break-even link speed "
-            "rises from 0.5-1.5 Gbit/s to 1.7-8 Gbit/s for JSON and from 23-330 Mbit/s to 0.5-5 Gbit/s "
-            "for Arrow, so compressing pays off on almost any network. JSON comes out 8-31% smaller "
-            "than with gzip level 1. Arrow comes out about the same size, up to 20% larger for the "
-            "scale responses (random float32 values hardly compress) and 13% smaller for Dash's "
-            "forecast, so zstd-compressed JSON can be smaller than zstd-compressed Arrow: Arrow's "
-            "gains are in CPU time, not bytes. Serving zstd needs server support: it is in the Python 3.14+ standard "
-            "library, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends "
-            "on its version."),
+            "Over loopback, zstd level 1 would cost 0-10% and brotli quality 1 0-11%, against "
+            "up to 19% for gzip level 1. The link speed below which compressing pays off rises "
+            "from 0.4-1.5 Gbit/s (gzip level 1) to 0.7-4.4 Gbit/s (brotli quality 1) and "
+            "1.3-6.7 Gbit/s (zstd level 1) for JSON, and from 20-320 Mbit/s to 0.15-1.2 Gbit/s "
+            "and 0.5-2.9 Gbit/s for Arrow, so either pays off on almost any network. Against "
+            "gzip level 1, JSON comes out 8-31% smaller with zstd and 7-26% smaller with "
+            "brotli. Arrow comes out within about 20% either way (random float32 values hardly "
+            "compress): zstd makes Dash's scale responses up to 20% larger, brotli up to 11% "
+            "smaller. So compressed JSON can be smaller than compressed Arrow: Arrow's gains "
+            "are in CPU time, not bytes. Serving zstd or brotli needs server support: zstd is "
+            "in the Python 3.14+ standard library and brotli in the `brotli` package, "
+            "Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends on "
+            "its version."),
         "baseline": "none",
         "columns": {"none": "No compression (measured)", "gzip1": "gzip level 1 (measured)",
-                    "zstd1": "zstd level 1 (estimated)"},
+                    "zstd1": "zstd level 1 (estimated)", "brotli1": "brotli quality 1 (estimated)"},
         "detail": {"compress_ms": "Compress (ms)", "breakeven_mbps": "Break-even (Mbit/s)"},
         "detail_summary": "Compression time, break-even link speed and size",
         "rows": rows,
     }
 
 
-EXPERIMENTS = ("date-axis", "shared-x", "tz-index", "compression", "zstd-estimate")
+EXPERIMENTS = ("date-axis", "shared-x", "tz-index", "compression", "compression-estimate")
 SERVER_ONLY = {"compression": lambda args: compression_experiment(args.repeats),
-               "zstd-estimate": lambda args: zstd_estimate_experiment(args.repeats)}
+               "compression-estimate": lambda args: compression_estimate_experiment(args.repeats)}
 
 
 def main():

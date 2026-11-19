@@ -194,15 +194,24 @@ with FastAPI and 1.7x to 4.5x faster with Dash.
    local time. Fast ISO strings ([web/dates.js](web/dates.js)) keep the data's
    own times instead. The Dash patch uses fast ISO strings, so existing Dash
    charts keep showing the times plotly.py sends.
-4. **Compression: gzip level 1 on any real network, or zstd.** For JSON,
-   gzip level 1 pays off on links slower than about 0.5-1.7 Gbit/s, so skip
-   it only on localhost or a very fast LAN. If you turn on the frameworks'
-   own compression, set the level to 1 (`COMPRESS_LEVEL = 1` for
-   Flask-Compress, `GZipMiddleware(compresslevel=1)` for Starlette): their
-   defaults, 6 and 9, are 2-27x slower for a payload at most 14% smaller.
-   zstd level 1, which current browsers accept, is 2-11x faster than gzip
-   level 1 and its payload 1-31% smaller
-   ([benchmark.md section 4](benchmark.md#compression-the-benchmarks-gzip-framework-defaults-and-zstd)). The benchmarks above use gzip.
+4. **Compression: gzip level 1 on any real network, or better, zstd or
+   brotli.** For JSON, gzip level 1 pays off on links slower than about
+   0.5-1.7 Gbit/s, so skip it only on localhost or a very fast LAN. If you
+   turn on the frameworks' own compression, set the level to 1
+   (`COMPRESS_LEVEL = 1` for Flask-Compress, `GZipMiddleware(compresslevel=1)`
+   for Starlette): their defaults, 6 and 9, are 2-31x slower for a payload at
+   most 14% smaller. Both encodings below are accepted by current browsers:
+   - **zstd level 1**: 2-11x faster than gzip level 1, payload 1-31% smaller.
+     The best all-round choice here.
+   - **brotli quality 1**: 1.3-5.5x faster than gzip level 1, JSON up to 26%
+     smaller; slower than zstd and mostly larger, but it compresses Dash's
+     Arrow responses better.
+
+   Estimated end to end, either would cost about 0-11% over loopback where
+   gzip level 1 costs up to 19% (benchmark.md section 4:
+   [compression](benchmark.md#compression-the-benchmarks-gzip-framework-defaults-zstd-and-brotli),
+   [estimate](benchmark.md#estimate-zstd-or-brotli-instead-of-gzip-level-1)).
+   The benchmarks above use gzip.
 
 Tried and not adopted:
 

@@ -1406,106 +1406,124 @@ Dash end to end, like bench.py: request sent to plot painted, no compression, fo
 
 *Side finding, optional and out of scope for the transport work:* an app change, no Dash or plotly.js change. Dropping the zone draws the same chart and helps every transport. The main benchmarks keep the tz-aware index. The end-to-end forecast benchmark (section 3) uses a UTC index, which plotly.py converts faster than a London one, so its Dash *Build* and JSON *Encode* times understate this cost.
 
-### Compression: the benchmark's gzip, framework defaults, and zstd
+### Compression: the benchmark's gzip, framework defaults, zstd and brotli
 
-Server only: the time to compress one response body, and its size. The benchmarks above compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's `GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox (`Content-Encoding: zstd`). Values are full-precision random floats, which compress less than typical real data.
+Server only: the time to compress one response body, and its size. The benchmarks above compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's `GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox (`Content-Encoding: zstd`). brotli (the `brotli` package) is accepted by every current browser (`Content-Encoding: br`), over HTTPS and on localhost. Values are full-precision random floats, which compress less than typical real data.
 
 - **Command:** `python microbench/optimisations.py --only compression --repeats 3`
-- **Finished:** 2026-11-19T11:18:00+00:00 (median of 3)
+- **Finished:** 2026-11-19T11:33:01+00:00 (median of 3)
 
-| Case | gzip level 1, as benchmarked (`gzip.compress`) | Flask-Compress default (gzip level 6) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | zstd level 1 | zstd level 3 (zstd's default) |
-| --- | --- | --- | --- | --- | --- |
-| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | 855 ms | 6,806 ms ▼ **-7.96x slower** | 22,792 ms ▼ **-26.67x slower** | 380 ms ▲ **+2.25x faster** | 759 ms ▲ **+1.13x faster** |
-| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | 826 ms | 2,220 ms ▼ **-2.69x slower** | 7,584 ms ▼ **-9.18x slower** | 76 ms ▲ **+10.81x faster** | 133 ms ▲ **+6.23x faster** |
-| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | 163 ms | 364 ms ▼ **-2.24x slower** | 494 ms ▼ **-3.04x slower** | 27 ms ▲ **+6.07x faster** | 61 ms ▲ **+2.68x faster** |
+| Case | gzip level 1, as benchmarked (`gzip.compress`) | Flask-Compress default (gzip level 6) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | zstd level 1 | zstd level 3 (zstd's default) | brotli quality 1 | brotli quality 4 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | 849 ms | 6,994 ms ▼ **-8.23x slower** | 25,961 ms ▼ **-30.56x slower** | 362 ms ▲ **+2.35x faster** | 1,007 ms ▼ **-1.19x slower** | 635 ms ▲ **+1.34x faster** | 3,616 ms ▼ **-4.26x slower** |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | 942 ms | 2,149 ms ▼ **-2.28x slower** | 8,722 ms ▼ **-9.26x slower** | 87 ms ▲ **+10.84x faster** | 115 ms ▲ **+8.16x faster** | 172 ms ▲ **+5.49x faster** | 890 ms ▲ **+1.06x faster** |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | 224 ms | 451 ms ▼ **-2.01x slower** | 672 ms ▼ **-3.00x slower** | 26 ms ▲ **+8.51x faster** | 62 ms ▲ **+3.64x faster** | 48 ms ▲ **+4.72x faster** | 301 ms ▼ **-1.34x slower** |
 
 <details><summary>Sizes</summary>
 
 | Case | Variant | Total | Wire MB |
 | --- | --- | --- | --- |
-| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **855** | 46.27 |
-| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | Flask-Compress default (gzip level 6) | **6,806** | 40.67 |
-| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **22,792** | 39.91 |
-| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | zstd level 1 | **380** | 37.98 |
-| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | zstd level 3 (zstd's default) | **759** | 41.75 |
-| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **826** | 35.50 |
-| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | Flask-Compress default (gzip level 6) | **2,220** | 35.19 |
-| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **7,584** | 35.18 |
-| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | zstd level 1 | **76** | 35.28 |
-| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | zstd level 3 (zstd's default) | **133** | 35.04 |
-| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **163** | 8.56 |
-| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | Flask-Compress default (gzip level 6) | **364** | 8.40 |
-| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **494** | 8.39 |
-| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | zstd level 1 | **27** | 5.94 |
-| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | zstd level 3 (zstd's default) | **61** | 5.89 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **849** | 46.27 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | Flask-Compress default (gzip level 6) | **6,994** | 40.67 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **25,961** | 39.91 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | zstd level 1 | **362** | 37.98 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | zstd level 3 (zstd's default) | **1,007** | 41.75 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | brotli quality 1 | **635** | 41.59 |
+| FastAPI, orjson, scale 10M points x 10 traces (117.6 MB) | brotli quality 4 | **3,616** | 38.72 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **942** | 35.50 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | Flask-Compress default (gzip level 6) | **2,149** | 35.19 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **8,722** | 35.18 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | zstd level 1 | **87** | 35.28 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | zstd level 3 (zstd's default) | **115** | 35.04 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | brotli quality 1 | **172** | 35.66 |
+| FastAPI, arrow, scale 10M points x 10 traces (48.0 MB) | brotli quality 4 | **890** | 35.03 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | gzip level 1, as benchmarked (`gzip.compress`) | **224** | 8.56 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | Flask-Compress default (gzip level 6) | **451** | 8.40 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | Starlette GZipMiddleware default (gzip level 9, 64 kB chunks) | **672** | 8.39 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | zstd level 1 | **26** | 5.94 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | zstd level 3 (zstd's default) | **62** | 5.89 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | brotli quality 1 | **48** | 6.30 |
+| Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB) | brotli quality 4 | **301** | 5.95 |
 
 </details>
 
-The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the same zlib. Their default levels are 2-27x slower for a payload at most 14% smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. *Not part of the benchmarks above, which use gzip; measured here as a lead.*
+The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the same zlib. Their default levels are 2-31x slower for a payload at most 14% smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. brotli quality 1 is 1.3-5.5x faster than gzip level 1, with JSON up to 26% smaller and Arrow about the same size, but slower than zstd level 1 and mostly larger. brotli quality 4 is smaller again, but slower than gzip level 1 for JSON. *Not part of the benchmarks above, which use gzip; measured here as a lead.*
 
-### Estimate: zstd level 1 instead of gzip level 1
+### Estimate: zstd or brotli instead of gzip level 1
 
-An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured end-to-end totals from sections 2 and 3. *zstd level 1* is the measured gzip level 1 total with its server compression time replaced by zstd level 1's, measured here on the same response body; the browser's decompression time is assumed the same (zstd usually decompresses faster than gzip). *Break-even* is the link speed below which compressing saves more transfer time than it costs: bytes saved divided by compression time. Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to localhost. A browser that does not offer zstd still gets gzip.
+An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured end-to-end totals from sections 2 and 3. *zstd level 1* and *brotli quality 1* are the measured gzip level 1 total with its server compression time replaced by theirs, measured here on the same response body; the browser's decompression time is assumed the same (both usually decompress at least as fast as gzip). *Break-even* is the link speed below which compressing saves more transfer time than it costs: bytes saved divided by compression time. Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to localhost. brotli is accepted by every current browser over HTTPS and on localhost. A browser that does not offer an encoding still gets gzip.
 
-- **Command:** `python microbench/optimisations.py --only zstd-estimate --repeats 3`
-- **Finished:** 2026-11-19T11:26:50+00:00 (median of 3)
+- **Command:** `python microbench/optimisations.py --only compression-estimate --repeats 3`
+- **Finished:** 2026-11-19T11:33:59+00:00 (median of 3)
 
-| Case | No compression (measured) | gzip level 1 (measured) | zstd level 1 (estimated) |
-| --- | --- | --- | --- |
-| FastAPI, orjson, scale 10M points x 10 traces | 8,219 ms | 9,015 ms ▼ **-1.10x slower** | 8,552 ms = same (0.96x) |
-| FastAPI, arrow, scale 10M points x 10 traces | 7,432 ms | 8,333 ms ▼ **-1.12x slower** | 7,617 ms = same (0.98x) |
-| FastAPI, orjson, scale 5M points x 100 traces | 3,360 ms | 3,446 ms = same (0.97x) | 3,253 ms = same (1.03x) |
-| FastAPI, arrow, scale 5M points x 100 traces | 2,726 ms | 3,066 ms ▼ **-1.12x slower** | 2,785 ms = same (0.98x) |
-| FastAPI, orjson, forecast 1,440 rows x 500 sites | 1,338 ms | 1,474 ms ▼ **-1.10x slower** | 1,388 ms = same (0.96x) |
-| FastAPI, arrow, forecast 1,440 rows x 500 sites | 1,264 ms | 1,503 ms ▼ **-1.19x slower** | 1,388 ms ▼ **-1.10x slower** |
-| Dash, orjson, scale 10M points x 10 traces | 12,662 ms | 14,043 ms ▼ **-1.11x slower** | 13,139 ms = same (0.96x) |
-| Dash, arrow, scale 10M points x 10 traces | 11,101 ms | 12,594 ms ▼ **-1.13x slower** | 11,546 ms = same (0.96x) |
-| Dash, orjson, scale 5M points x 100 traces | 5,385 ms | 5,875 ms ▼ **-1.09x slower** | 5,446 ms = same (0.99x) |
-| Dash, arrow, scale 5M points x 100 traces | 4,408 ms | 5,097 ms ▼ **-1.16x slower** | 4,654 ms ▼ **-1.06x slower** |
-| Dash, orjson, forecast 1,440 rows x 500 sites | 6,712 ms | 6,891 ms = same (0.97x) | 6,766 ms = same (0.99x) |
-| Dash, arrow, forecast 1,440 rows x 500 sites | 4,521 ms | 4,528 ms = same (1.00x) | 4,412 ms = same (1.02x) |
+| Case | No compression (measured) | gzip level 1 (measured) | zstd level 1 (estimated) | brotli quality 1 (estimated) |
+| --- | --- | --- | --- | --- |
+| FastAPI, orjson, scale 10M points x 10 traces | 8,219 ms | 9,015 ms ▼ **-1.10x slower** | 8,589 ms = same (0.96x) | 9,019 ms ▼ **-1.10x slower** |
+| FastAPI, arrow, scale 10M points x 10 traces | 7,432 ms | 8,333 ms ▼ **-1.12x slower** | 7,623 ms = same (0.97x) | 7,796 ms = same (0.95x) |
+| FastAPI, orjson, scale 5M points x 100 traces | 3,360 ms | 3,446 ms = same (0.97x) | 3,296 ms = same (1.02x) | 3,392 ms = same (0.99x) |
+| FastAPI, arrow, scale 5M points x 100 traces | 2,726 ms | 3,066 ms ▼ **-1.12x slower** | 2,789 ms = same (0.98x) | 2,838 ms = same (0.96x) |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | 1,338 ms | 1,474 ms ▼ **-1.10x slower** | 1,391 ms = same (0.96x) | 1,452 ms ▼ **-1.08x slower** |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | 1,264 ms | 1,503 ms ▼ **-1.19x slower** | 1,388 ms ▼ **-1.10x slower** | 1,403 ms ▼ **-1.11x slower** |
+| Dash, orjson, scale 10M points x 10 traces | 12,662 ms | 14,043 ms ▼ **-1.11x slower** | 13,153 ms = same (0.96x) | 13,363 ms ▼ **-1.06x slower** |
+| Dash, arrow, scale 10M points x 10 traces | 11,101 ms | 12,594 ms ▼ **-1.13x slower** | 11,528 ms = same (0.96x) | 11,810 ms ▼ **-1.06x slower** |
+| Dash, orjson, scale 5M points x 100 traces | 5,385 ms | 5,875 ms ▼ **-1.09x slower** | 5,449 ms = same (0.99x) | 5,527 ms = same (0.97x) |
+| Dash, arrow, scale 5M points x 100 traces | 4,408 ms | 5,097 ms ▼ **-1.16x slower** | 4,623 ms = same (0.95x) | 4,747 ms ▼ **-1.08x slower** |
+| Dash, orjson, forecast 1,440 rows x 500 sites | 6,712 ms | 6,891 ms = same (0.97x) | 6,773 ms = same (0.99x) | 6,813 ms = same (0.99x) |
+| Dash, arrow, forecast 1,440 rows x 500 sites | 4,521 ms | 4,528 ms = same (1.00x) | 4,420 ms = same (1.02x) | 4,442 ms = same (1.02x) |
 
 <details><summary>Compression time, break-even link speed and size</summary>
 
 | Case | Variant | Compress (ms) | Break-even (Mbit/s) | Total | Wire MB |
 | --- | --- | --- | --- | --- | --- |
 | FastAPI, orjson, scale 10M points x 10 traces | No compression (measured) | - | - | **8,219** | 117.55 |
-| FastAPI, orjson, scale 10M points x 10 traces | gzip level 1 (measured) | 846 | 674 | **9,015** | 46.27 |
-| FastAPI, orjson, scale 10M points x 10 traces | zstd level 1 (estimated) | 312 | 2,039 | **8,552** | 37.98 |
+| FastAPI, orjson, scale 10M points x 10 traces | gzip level 1 (measured) | 949 | 601 | **9,015** | 46.27 |
+| FastAPI, orjson, scale 10M points x 10 traces | zstd level 1 (estimated) | 350 | 1,819 | **8,589** | 37.98 |
+| FastAPI, orjson, scale 10M points x 10 traces | brotli quality 1 (estimated) | 780 | 780 | **9,019** | 41.59 |
 | FastAPI, arrow, scale 10M points x 10 traces | No compression (measured) | - | - | **7,432** | 48.00 |
-| FastAPI, arrow, scale 10M points x 10 traces | gzip level 1 (measured) | 882 | 113 | **8,333** | 35.50 |
-| FastAPI, arrow, scale 10M points x 10 traces | zstd level 1 (estimated) | 75 | 1,355 | **7,617** | 35.28 |
+| FastAPI, arrow, scale 10M points x 10 traces | gzip level 1 (measured) | 1,081 | 92 | **8,333** | 35.50 |
+| FastAPI, arrow, scale 10M points x 10 traces | zstd level 1 (estimated) | 81 | 1,251 | **7,623** | 35.28 |
+| FastAPI, arrow, scale 10M points x 10 traces | brotli quality 1 (estimated) | 254 | 389 | **7,796** | 35.66 |
 | FastAPI, orjson, scale 5M points x 100 traces | No compression (measured) | - | - | **3,360** | 48.70 |
-| FastAPI, orjson, scale 5M points x 100 traces | gzip level 1 (measured) | 391 | 577 | **3,446** | 20.52 |
-| FastAPI, orjson, scale 5M points x 100 traces | zstd level 1 (estimated) | 149 | 1,679 | **3,253** | 17.39 |
+| FastAPI, orjson, scale 5M points x 100 traces | gzip level 1 (measured) | 577 | 391 | **3,446** | 20.52 |
+| FastAPI, orjson, scale 5M points x 100 traces | zstd level 1 (estimated) | 192 | 1,304 | **3,296** | 17.39 |
+| FastAPI, orjson, scale 5M points x 100 traces | brotli quality 1 (estimated) | 288 | 822 | **3,392** | 19.13 |
 | FastAPI, arrow, scale 5M points x 100 traces | No compression (measured) | - | - | **2,726** | 20.41 |
-| FastAPI, arrow, scale 5M points x 100 traces | gzip level 1 (measured) | 324 | 142 | **3,066** | 14.68 |
-| FastAPI, arrow, scale 5M points x 100 traces | zstd level 1 (estimated) | 28 | 1,403 | **2,785** | 15.54 |
+| FastAPI, arrow, scale 5M points x 100 traces | gzip level 1 (measured) | 364 | 126 | **3,066** | 14.68 |
+| FastAPI, arrow, scale 5M points x 100 traces | zstd level 1 (estimated) | 32 | 1,228 | **2,789** | 15.54 |
+| FastAPI, arrow, scale 5M points x 100 traces | brotli quality 1 (estimated) | 80 | 482 | **2,838** | 15.59 |
 | FastAPI, orjson, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **1,338** | 13.14 |
-| FastAPI, orjson, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 110 | 478 | **1,474** | 6.56 |
-| FastAPI, orjson, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 19 | 2,964 | **1,388** | 6.03 |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 116 | 455 | **1,474** | 6.56 |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 22 | 2,593 | **1,391** | 6.03 |
+| FastAPI, orjson, forecast 1,440 rows x 500 sites | brotli quality 1 (estimated) | 82 | 680 | **1,452** | 6.14 |
 | FastAPI, arrow, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **1,264** | 5.92 |
-| FastAPI, arrow, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 120 | 23 | **1,503** | 5.57 |
-| FastAPI, arrow, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 5.5 | 524 | **1,388** | 5.56 |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 140 | 20 | **1,503** | 5.57 |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 6.0 | 480 | **1,388** | 5.56 |
+| FastAPI, arrow, forecast 1,440 rows x 500 sites | brotli quality 1 (estimated) | 20 | 148 | **1,403** | 5.55 |
 | Dash, orjson, scale 10M points x 10 traces | No compression (measured) | - | - | **12,662** | 315.87 |
-| Dash, orjson, scale 10M points x 10 traces | gzip level 1 (measured) | 1,393 | 1,450 | **14,043** | 63.41 |
-| Dash, orjson, scale 10M points x 10 traces | zstd level 1 (estimated) | 335 | 6,488 | **13,139** | 44.50 |
+| Dash, orjson, scale 10M points x 10 traces | gzip level 1 (measured) | 1,442 | 1,401 | **14,043** | 63.41 |
+| Dash, orjson, scale 10M points x 10 traces | zstd level 1 (estimated) | 349 | 6,223 | **13,153** | 44.50 |
+| Dash, orjson, scale 10M points x 10 traces | brotli quality 1 (estimated) | 559 | 3,768 | **13,363** | 52.41 |
 | Dash, arrow, scale 10M points x 10 traces | No compression (measured) | - | - | **11,101** | 120.01 |
-| Dash, arrow, scale 10M points x 10 traces | gzip level 1 (measured) | 1,576 | 277 | **12,594** | 65.53 |
-| Dash, arrow, scale 10M points x 10 traces | zstd level 1 (estimated) | 251 | 1,492 | **11,546** | 73.18 |
+| Dash, arrow, scale 10M points x 10 traces | gzip level 1 (measured) | 1,497 | 291 | **12,594** | 65.53 |
+| Dash, arrow, scale 10M points x 10 traces | zstd level 1 (estimated) | 233 | 1,610 | **11,528** | 73.18 |
+| Dash, arrow, scale 10M points x 10 traces | brotli quality 1 (estimated) | 515 | 938 | **11,810** | 59.60 |
 | Dash, orjson, scale 5M points x 100 traces | No compression (measured) | - | - | **5,385** | 158.06 |
-| Dash, orjson, scale 5M points x 100 traces | gzip level 1 (measured) | 697 | 1,462 | **5,875** | 30.72 |
-| Dash, orjson, scale 5M points x 100 traces | zstd level 1 (estimated) | 158 | 6,893 | **5,446** | 21.52 |
+| Dash, orjson, scale 5M points x 100 traces | gzip level 1 (measured) | 670 | 1,520 | **5,875** | 30.72 |
+| Dash, orjson, scale 5M points x 100 traces | zstd level 1 (estimated) | 162 | 6,741 | **5,449** | 21.52 |
+| Dash, orjson, scale 5M points x 100 traces | brotli quality 1 (estimated) | 240 | 4,414 | **5,527** | 25.88 |
 | Dash, arrow, scale 5M points x 100 traces | No compression (measured) | - | - | **4,408** | 60.06 |
-| Dash, arrow, scale 5M points x 100 traces | gzip level 1 (measured) | 727 | 315 | **5,097** | 31.39 |
-| Dash, arrow, scale 5M points x 100 traces | zstd level 1 (estimated) | 146 | 1,229 | **4,654** | 37.58 |
+| Dash, arrow, scale 5M points x 100 traces | gzip level 1 (measured) | 719 | 319 | **5,097** | 31.39 |
+| Dash, arrow, scale 5M points x 100 traces | zstd level 1 (estimated) | 116 | 1,552 | **4,623** | 37.58 |
+| Dash, arrow, scale 5M points x 100 traces | brotli quality 1 (estimated) | 239 | 1,032 | **4,747** | 29.18 |
 | Dash, orjson, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **6,712** | 29.00 |
-| Dash, orjson, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 208 | 785 | **6,891** | 8.56 |
-| Dash, orjson, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 24 | 7,808 | **6,766** | 5.94 |
+| Dash, orjson, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 167 | 980 | **6,891** | 8.56 |
+| Dash, orjson, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 31 | 5,963 | **6,773** | 5.94 |
+| Dash, orjson, forecast 1,440 rows x 500 sites | brotli quality 1 (estimated) | 71 | 2,567 | **6,813** | 6.30 |
 | Dash, arrow, forecast 1,440 rows x 500 sites | No compression (measured) | - | - | **4,521** | 11.79 |
-| Dash, arrow, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 130 | 334 | **4,528** | 6.36 |
-| Dash, arrow, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 9.6 | 5,187 | **4,412** | 5.56 |
+| Dash, arrow, forecast 1,440 rows x 500 sites | gzip level 1 (measured) | 208 | 209 | **4,528** | 6.36 |
+| Dash, arrow, forecast 1,440 rows x 500 sites | zstd level 1 (estimated) | 17 | 2,853 | **4,420** | 5.56 |
+| Dash, arrow, forecast 1,440 rows x 500 sites | brotli quality 1 (estimated) | 40 | 1,230 | **4,442** | 5.71 |
 
 </details>
 
-Over loopback, zstd level 1 would cost mostly under 5% (up to 10%, where the measured gzip total itself ran high) against up to 19% for gzip level 1. The break-even link speed rises from 0.5-1.5 Gbit/s to 1.7-8 Gbit/s for JSON and from 23-330 Mbit/s to 0.5-5 Gbit/s for Arrow, so compressing pays off on almost any network. JSON comes out 8-31% smaller than with gzip level 1. Arrow comes out about the same size, up to 20% larger for the scale responses (random float32 values hardly compress) and 13% smaller for Dash's forecast, so zstd-compressed JSON can be smaller than zstd-compressed Arrow: Arrow's gains are in CPU time, not bytes. Serving zstd needs server support: it is in the Python 3.14+ standard library, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends on its version.
+Over loopback, zstd level 1 would cost 0-10% and brotli quality 1 0-11%, against up to 19% for gzip level 1. The link speed below which compressing pays off rises from 0.4-1.5 Gbit/s (gzip level 1) to 0.7-4.4 Gbit/s (brotli quality 1) and 1.3-6.7 Gbit/s (zstd level 1) for JSON, and from 20-320 Mbit/s to 0.15-1.2 Gbit/s and 0.5-2.9 Gbit/s for Arrow, so either pays off on almost any network. Against gzip level 1, JSON comes out 8-31% smaller with zstd and 7-26% smaller with brotli. Arrow comes out within about 20% either way (random float32 values hardly compress): zstd makes Dash's scale responses up to 20% larger, brotli up to 11% smaller. So compressed JSON can be smaller than compressed Arrow: Arrow's gains are in CPU time, not bytes. Serving zstd or brotli needs server support: zstd is in the Python 3.14+ standard library and brotli in the `brotli` package, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends on its version.

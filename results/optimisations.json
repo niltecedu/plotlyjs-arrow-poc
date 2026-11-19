@@ -521,16 +521,18 @@
   },
   {
    "id": "compression",
-   "title": "Compression: the benchmark's gzip, framework defaults, and zstd",
-   "description": "Server only: the time to compress one response body, and its size. The benchmarks above compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's `GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox (`Content-Encoding: zstd`). Values are full-precision random floats, which compress less than typical real data.",
-   "notes": "The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the same zlib. Their default levels are 2-27x slower for a payload at most 14% smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. *Not part of the benchmarks above, which use gzip; measured here as a lead.*",
+   "title": "Compression: the benchmark's gzip, framework defaults, zstd and brotli",
+   "description": "Server only: the time to compress one response body, and its size. The benchmarks above compress with `gzip.compress` at level 1 in [transports.py](transports.py). Dash compresses only with `compress=True` and Flask-Compress installed; FastAPI only with Starlette's `GZipMiddleware`. Both use the same zlib, at level 6 and level 9 by default. zstd is in the Python 3.15 standard library and is accepted by current Chrome, Edge and Firefox (`Content-Encoding: zstd`). brotli (the `brotli` package) is accepted by every current browser (`Content-Encoding: br`), over HTTPS and on localhost. Values are full-precision random floats, which compress less than typical real data.",
+   "notes": "The benchmark's gzip level 1 costs the same as the frameworks' gzip at level 1: it is the same zlib. Their default levels are 2-31x slower for a payload at most 14% smaller. zstd level 1 is 2-11x faster than gzip level 1, and its payload 1-31% smaller. brotli quality 1 is 1.3-5.5x faster than gzip level 1, with JSON up to 26% smaller and Arrow about the same size, but slower than zstd level 1 and mostly larger. brotli quality 4 is smaller again, but slower than gzip level 1 for JSON. *Not part of the benchmarks above, which use gzip; measured here as a lead.*",
    "baseline": "gzip1",
    "columns": {
     "gzip1": "gzip level 1, as benchmarked (`gzip.compress`)",
     "flask-compress": "Flask-Compress default (gzip level 6)",
     "starlette": "Starlette GZipMiddleware default (gzip level 9, 64 kB chunks)",
     "zstd1": "zstd level 1",
-    "zstd3": "zstd level 3 (zstd's default)"
+    "zstd3": "zstd level 3 (zstd's default)",
+    "brotli1": "brotli quality 1",
+    "brotli4": "brotli quality 4"
    },
    "detail": {},
    "rows": [
@@ -538,24 +540,32 @@
      "case": "FastAPI, orjson, scale 10M points x 10 traces (117.6 MB)",
      "modes": {
       "gzip1": {
-       "total_ms": 854.6392210046179,
+       "total_ms": 849.420562000887,
        "wire_bytes": 46269419
       },
       "flask-compress": {
-       "total_ms": 6806.411871002638,
+       "total_ms": 6994.067883002572,
        "wire_bytes": 40667838
       },
       "starlette": {
-       "total_ms": 22791.92315399996,
+       "total_ms": 25961.405285001092,
        "wire_bytes": 39907957
       },
       "zstd1": {
-       "total_ms": 380.0265199970454,
+       "total_ms": 361.7310850022477,
        "wire_bytes": 37982914
       },
       "zstd3": {
-       "total_ms": 759.0935490006814,
+       "total_ms": 1007.2374489973299,
        "wire_bytes": 41752187
+      },
+      "brotli1": {
+       "total_ms": 634.5272929975181,
+       "wire_bytes": 41587956
+      },
+      "brotli4": {
+       "total_ms": 3616.397648998827,
+       "wire_bytes": 38717215
       }
      }
     },
@@ -563,24 +573,32 @@
      "case": "FastAPI, arrow, scale 10M points x 10 traces (48.0 MB)",
      "modes": {
       "gzip1": {
-       "total_ms": 826.2766449988703,
+       "total_ms": 942.2492110024905,
        "wire_bytes": 35504444
       },
       "flask-compress": {
-       "total_ms": 2219.5059079967905,
+       "total_ms": 2149.186777001887,
        "wire_bytes": 35186188
       },
       "starlette": {
-       "total_ms": 7583.890986999904,
+       "total_ms": 8722.394814998552,
        "wire_bytes": 35181499
       },
       "zstd1": {
-       "total_ms": 76.41919700108701,
+       "total_ms": 86.9479430039064,
        "wire_bytes": 35280477
       },
       "zstd3": {
-       "total_ms": 132.63406600162853,
+       "total_ms": 115.49354099406628,
        "wire_bytes": 35042358
+      },
+      "brotli1": {
+       "total_ms": 171.7108550001285,
+       "wire_bytes": 35657493
+      },
+      "brotli4": {
+       "total_ms": 890.4004159994656,
+       "wire_bytes": 35031388
       }
      }
     },
@@ -588,47 +606,57 @@
      "case": "Dash, orjson, forecast 1,440 rows x 500 sites (29.0 MB)",
      "modes": {
       "gzip1": {
-       "total_ms": 162.65607099921908,
+       "total_ms": 224.23694399913074,
        "wire_bytes": 8563989
       },
       "flask-compress": {
-       "total_ms": 364.4829879995086,
+       "total_ms": 451.4785089995712,
        "wire_bytes": 8399732
       },
       "starlette": {
-       "total_ms": 493.6620540029253,
+       "total_ms": 671.8107610067818,
        "wire_bytes": 8394400
       },
       "zstd1": {
-       "total_ms": 26.815052995516453,
+       "total_ms": 26.34160200250335,
        "wire_bytes": 5937599
       },
       "zstd3": {
-       "total_ms": 60.76816599670565,
+       "total_ms": 61.65280899585923,
        "wire_bytes": 5894687
+      },
+      "brotli1": {
+       "total_ms": 47.54722899815533,
+       "wire_bytes": 6296872
+      },
+      "brotli4": {
+       "total_ms": 301.2703629938187,
+       "wire_bytes": 5945512
       }
      }
     }
    ],
    "command": "python microbench/optimisations.py --only compression --repeats 3",
-   "finished": "2026-11-19T11:18:00+00:00",
+   "finished": "2026-11-19T11:33:01+00:00",
    "repeats": 3
   },
   {
-   "id": "zstd-estimate",
-   "title": "Estimate: zstd level 1 instead of gzip level 1",
-   "description": "An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured end-to-end totals from sections 2 and 3. *zstd level 1* is the measured gzip level 1 total with its server compression time replaced by zstd level 1's, measured here on the same response body; the browser's decompression time is assumed the same (zstd usually decompresses faster than gzip). *Break-even* is the link speed below which compressing saves more transfer time than it costs: bytes saved divided by compression time. Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to localhost. A browser that does not offer zstd still gets gzip.",
-   "notes": "Over loopback, zstd level 1 would cost mostly under 5% (up to 10%, where the measured gzip total itself ran high) against up to 19% for gzip level 1. The break-even link speed rises from 0.5-1.5 Gbit/s to 1.7-8 Gbit/s for JSON and from 23-330 Mbit/s to 0.5-5 Gbit/s for Arrow, so compressing pays off on almost any network. JSON comes out 8-31% smaller than with gzip level 1. Arrow comes out about the same size, up to 20% larger for the scale responses (random float32 values hardly compress) and 13% smaller for Dash's forecast, so zstd-compressed JSON can be smaller than zstd-compressed Arrow: Arrow's gains are in CPU time, not bytes. Serving zstd needs server support: it is in the Python 3.14+ standard library, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends on its version.",
+   "id": "compression-estimate",
+   "title": "Estimate: zstd or brotli instead of gzip level 1",
+   "description": "An estimate, not a benchmark run. *No compression* and *gzip level 1* are the measured end-to-end totals from sections 2 and 3. *zstd level 1* and *brotli quality 1* are the measured gzip level 1 total with its server compression time replaced by theirs, measured here on the same response body; the browser's decompression time is assumed the same (both usually decompress at least as fast as gzip). *Break-even* is the link speed below which compressing saves more transfer time than it costs: bytes saved divided by compression time. Browsers: Chrome and Edge accept `Content-Encoding: zstd` from version 123 and Firefox from 126; the Chromium used here sends `Accept-Encoding: gzip, deflate, br, zstd`, also to localhost. brotli is accepted by every current browser over HTTPS and on localhost. A browser that does not offer an encoding still gets gzip.",
+   "notes": "Over loopback, zstd level 1 would cost 0-10% and brotli quality 1 0-11%, against up to 19% for gzip level 1. The link speed below which compressing pays off rises from 0.4-1.5 Gbit/s (gzip level 1) to 0.7-4.4 Gbit/s (brotli quality 1) and 1.3-6.7 Gbit/s (zstd level 1) for JSON, and from 20-320 Mbit/s to 0.15-1.2 Gbit/s and 0.5-2.9 Gbit/s for Arrow, so either pays off on almost any network. Against gzip level 1, JSON comes out 8-31% smaller with zstd and 7-26% smaller with brotli. Arrow comes out within about 20% either way (random float32 values hardly compress): zstd makes Dash's scale responses up to 20% larger, brotli up to 11% smaller. So compressed JSON can be smaller than compressed Arrow: Arrow's gains are in CPU time, not bytes. Serving zstd or brotli needs server support: zstd is in the Python 3.14+ standard library and brotli in the `brotli` package, Starlette's GZipMiddleware does gzip only, and Flask-Compress support depends on its version.",
    "baseline": "none",
    "columns": {
     "none": "No compression (measured)",
     "gzip1": "gzip level 1 (measured)",
-    "zstd1": "zstd level 1 (estimated)"
+    "zstd1": "zstd level 1 (estimated)",
+    "brotli1": "brotli quality 1 (estimated)"
    },
    "detail": {
     "compress_ms": "Compress (ms)",
     "breakeven_mbps": "Break-even (Mbit/s)"
    },
+   "detail_summary": "Compression time, break-even link speed and size",
    "rows": [
     {
      "case": "FastAPI, orjson, scale 10M points x 10 traces",
@@ -641,15 +669,21 @@
       },
       "gzip1": {
        "total_ms": 9015.1,
-       "compress_ms": 845.7286279954133,
-       "breakeven_mbps": 674.2648517783091,
+       "compress_ms": 949.0047090002918,
+       "breakeven_mbps": 600.8875220447665,
        "wire_bytes": 46269419
       },
       "zstd1": {
-       "total_ms": 8551.61258200212,
-       "compress_ms": 312.194582002121,
-       "breakeven_mbps": 2038.9115144723282,
+       "total_ms": 8589.316070002382,
+       "compress_ms": 349.89807000238216,
+       "breakeven_mbps": 1819.20731370615,
        "wire_bytes": 37982914
+      },
+      "brotli1": {
+       "total_ms": 9018.95598600356,
+       "compress_ms": 779.537986003561,
+       "breakeven_mbps": 779.5602047765046,
+       "wire_bytes": 41587956
       }
      }
     },
@@ -664,15 +698,21 @@
       },
       "gzip1": {
        "total_ms": 8333,
-       "compress_ms": 882.2632139999769,
-       "breakeven_mbps": 113.33967280200194,
+       "compress_ms": 1081.3927729977877,
+       "breakeven_mbps": 92.46910696730222,
        "wire_bytes": 35504444
       },
       "zstd1": {
-       "total_ms": 7617.178703005036,
-       "compress_ms": 75.12270300503587,
-       "breakeven_mbps": 1354.9453883891354,
+       "total_ms": 7623.432342001022,
+       "compress_ms": 81.37634200102184,
+       "breakeven_mbps": 1250.8200479043635,
        "wire_bytes": 35280477
+      },
+      "brotli1": {
+       "total_ms": 7796.12176399837,
+       "compress_ms": 254.06576399836922,
+       "breakeven_mbps": 388.76167510957515,
+       "wire_bytes": 35657493
       }
      }
     },
@@ -687,15 +727,21 @@
       },
       "gzip1": {
        "total_ms": 3445.8,
-       "compress_ms": 390.8217819989659,
-       "breakeven_mbps": 576.7445582155307,
+       "compress_ms": 576.6774049989181,
+       "breakeven_mbps": 390.86729260776724,
        "wire_bytes": 20522068
       },
       "zstd1": {
-       "total_ms": 3253.4857380046087,
-       "compress_ms": 149.12773800460855,
-       "breakeven_mbps": 1679.2611981565833,
+       "total_ms": 3296.3850230039025,
+       "compress_ms": 192.0270230039023,
+       "breakeven_mbps": 1304.1103282370366,
        "wire_bytes": 17394557
+      },
+      "brotli1": {
+       "total_ms": 3392.260401003521,
+       "compress_ms": 287.90240100352094,
+       "breakeven_mbps": 821.5040624031042,
+       "wire_bytes": 19133486
       }
      }
     },
@@ -710,15 +756,21 @@
       },
       "gzip1": {
        "total_ms": 3065.6,
-       "compress_ms": 324.01869400200667,
-       "breakeven_mbps": 141.5203284527652,
+       "compress_ms": 363.9269929990405,
+       "breakeven_mbps": 126.0011839795596,
        "wire_bytes": 14678392
       },
       "zstd1": {
-       "total_ms": 2785.4771599953565,
-       "compress_ms": 27.781159995356575,
-       "breakeven_mbps": 1403.002898601597,
+       "total_ms": 2789.438569997732,
+       "compress_ms": 31.742569997732062,
+       "breakeven_mbps": 1227.910909632863,
        "wire_bytes": 15538165
+      },
+      "brotli1": {
+       "total_ms": 2837.7429140012864,
+       "compress_ms": 80.0469140012865,
+       "breakeven_mbps": 481.8544285090128,
+       "wire_bytes": 15588926
       }
      }
     },
@@ -733,15 +785,21 @@
       },
       "gzip1": {
        "total_ms": 1473.7,
-       "compress_ms": 110.07514700031606,
-       "breakeven_mbps": 477.95980685675516,
+       "compress_ms": 115.69605799741112,
+       "breakeven_mbps": 454.7388814334302,
        "wire_bytes": 6563684
       },
       "zstd1": {
-       "total_ms": 1388.3430050000236,
-       "compress_ms": 19.197005000023637,
-       "breakeven_mbps": 2963.940260469273,
+       "total_ms": 1391.0857360051516,
+       "compress_ms": 21.939736005151644,
+       "breakeven_mbps": 2593.4120623256204,
        "wire_bytes": 6027774
+      },
+      "brotli1": {
+       "total_ms": 1451.5335720016076,
+       "compress_ms": 82.38757200160762,
+       "breakeven_mbps": 680.1695770195357,
+       "wire_bytes": 6135431
       }
      }
     },
@@ -756,15 +814,21 @@
       },
       "gzip1": {
        "total_ms": 1503.2,
-       "compress_ms": 120.11350200191373,
-       "breakeven_mbps": 23.343054305046635,
+       "compress_ms": 140.01514999836218,
+       "breakeven_mbps": 20.0250901422653,
        "wire_bytes": 5567339
       },
       "zstd1": {
-       "total_ms": 1387.9694429983506,
-       "compress_ms": 5.507442998350598,
-       "breakeven_mbps": 523.7189020138425,
+       "total_ms": 1388.472166995111,
+       "compress_ms": 6.010166995110922,
+       "breakeven_mbps": 479.91212263258706,
        "wire_bytes": 5557272
+      },
+      "brotli1": {
+       "total_ms": 1402.5997010016586,
+       "compress_ms": 20.13770100165857,
+       "breakeven_mbps": 147.9851150712068,
+       "wire_bytes": 5545306
       }
      }
     },
@@ -779,15 +843,21 @@
       },
       "gzip1": {
        "total_ms": 14042.9,
-       "compress_ms": 1392.6670150030986,
-       "breakeven_mbps": 1450.184581269419,
+       "compress_ms": 1441.5441650053253,
+       "breakeven_mbps": 1401.014468393023,
        "wire_bytes": 63414120
       },
       "zstd1": {
-       "total_ms": 13138.527643996797,
-       "compress_ms": 334.6216439967975,
-       "breakeven_mbps": 6487.720130921289,
+       "total_ms": 13152.789651000505,
+       "compress_ms": 348.8836510005058,
+       "breakeven_mbps": 6222.508764094689,
        "wire_bytes": 44500702
+      },
+      "brotli1": {
+       "total_ms": 13363.285436999733,
+       "compress_ms": 559.379436999734,
+       "breakeven_mbps": 3767.9176969835635,
+       "wire_bytes": 52405189
       }
      }
     },
@@ -802,15 +872,21 @@
       },
       "gzip1": {
        "total_ms": 12594.1,
-       "compress_ms": 1575.757179998618,
-       "breakeven_mbps": 276.5844722347273,
+       "compress_ms": 1496.8309460018645,
+       "breakeven_mbps": 291.16846439080575,
        "wire_bytes": 65533158
       },
       "zstd1": {
-       "total_ms": 11545.97088099693,
-       "compress_ms": 251.03888099692995,
-       "breakeven_mbps": 1492.4946068596523,
+       "total_ms": 11527.655959998112,
+       "compress_ms": 232.72395999811124,
+       "breakeven_mbps": 1609.9510166595687,
        "wire_bytes": 73177632
+      },
+      "brotli1": {
+       "total_ms": 11810.11760400291,
+       "compress_ms": 515.1856040029088,
+       "breakeven_mbps": 938.0524072199646,
+       "wire_bytes": 59603017
       }
      }
     },
@@ -825,15 +901,21 @@
       },
       "gzip1": {
        "total_ms": 5874.9,
-       "compress_ms": 696.8488000056823,
-       "breakeven_mbps": 1461.896216211742,
+       "compress_ms": 670.4010989997187,
+       "breakeven_mbps": 1519.5688454568412,
        "wire_bytes": 30719041
       },
       "zstd1": {
-       "total_ms": 5445.816270998213,
-       "compress_ms": 158.4792709982139,
-       "breakeven_mbps": 6892.592028722234,
+       "total_ms": 5449.392089997011,
+       "compress_ms": 162.05508999701124,
+       "breakeven_mbps": 6740.503862113468,
        "wire_bytes": 21517499
+      },
+      "brotli1": {
+       "total_ms": 5526.895513996598,
+       "compress_ms": 239.55851399659878,
+       "breakeven_mbps": 4414.178358173543,
+       "wire_bytes": 25877368
       }
      }
     },
@@ -848,15 +930,21 @@
       },
       "gzip1": {
        "total_ms": 5096.8,
-       "compress_ms": 727.451487997314,
-       "breakeven_mbps": 315.27919563599386,
+       "compress_ms": 719.4286950034439,
+       "breakeven_mbps": 318.79506835476184,
        "wire_bytes": 31388218
       },
       "zstd1": {
-       "total_ms": 4653.572301003657,
-       "compress_ms": 146.29130100365728,
-       "breakeven_mbps": 1228.9688229343542,
+       "total_ms": 4623.133042996266,
+       "compress_ms": 115.85204299626639,
+       "breakeven_mbps": 1551.87119147993,
        "wire_bytes": 37583577
+      },
+      "brotli1": {
+       "total_ms": 4746.719971002528,
+       "compress_ms": 239.43897100252798,
+       "breakeven_mbps": 1031.698519943071,
+       "wire_bytes": 29178404
       }
      }
     },
@@ -871,15 +959,21 @@
       },
       "gzip1": {
        "total_ms": 6890.9,
-       "compress_ms": 208.3411409985274,
-       "breakeven_mbps": 784.8251152716674,
+       "compress_ms": 166.85552499984624,
+       "breakeven_mbps": 979.9577209094555,
        "wire_bytes": 8563989
       },
       "zstd1": {
-       "total_ms": 6765.841400996914,
-       "compress_ms": 23.633400996914133,
-       "breakeven_mbps": 7807.698943715021,
+       "total_ms": 6773.1525809980385,
+       "compress_ms": 30.944580998038873,
+       "breakeven_mbps": 5962.998174436235,
        "wire_bytes": 5937599
+      },
+      "brotli1": {
+       "total_ms": 6812.976479003163,
+       "compress_ms": 70.76847900316352,
+       "breakeven_mbps": 2566.7966665198483,
+       "wire_bytes": 6296872
       }
      }
     },
@@ -894,23 +988,28 @@
       },
       "gzip1": {
        "total_ms": 4528.3,
-       "compress_ms": 129.85751400265144,
-       "breakeven_mbps": 334.37830943778437,
+       "compress_ms": 207.5066399993375,
+       "breakeven_mbps": 209.25371833951257,
        "wire_bytes": 6360612
       },
       "zstd1": {
-       "total_ms": 4412.112855999791,
-       "compress_ms": 9.601855999790132,
-       "breakeven_mbps": 5186.844710136098,
+       "total_ms": 4419.967198002038,
+       "compress_ms": 17.456198002037127,
+       "breakeven_mbps": 2853.0460065925,
        "wire_bytes": 5562887
+      },
+      "brotli1": {
+       "total_ms": 4442.032673999844,
+       "compress_ms": 39.52167399984319,
+       "breakeven_mbps": 1229.6547965097031,
+       "wire_bytes": 5713552
       }
      }
     }
    ],
-   "command": "python microbench/optimisations.py --only zstd-estimate --repeats 3",
-   "finished": "2026-11-19T11:26:50+00:00",
-   "repeats": 3,
-   "detail_summary": "Compression time, break-even link speed and size"
+   "command": "python microbench/optimisations.py --only compression-estimate --repeats 3",
+   "finished": "2026-11-19T11:33:59+00:00",
+   "repeats": 3
   }
  ]
 }
